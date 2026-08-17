@@ -95,11 +95,20 @@ export function parseSearchIntent(raw: string): SearchIntent {
 export function tailorListings<T extends IntentListing>(listings: T[], intent: SearchIntent): T[] {
   if (!intent.raw) return [...listings];
 
+  // Suggestions often name an area without saying "in" or "near". When a
+  // neighborhood or city from this snapshot appears verbatim, treat it as the
+  // requested area just like an explicitly phrased location.
+  const rawSearch = intent.raw.toLowerCase().replace(/[^a-z0-9]+/g, " ");
+  const inferredLocation = [...new Set(listings.flatMap((listing) => [listing.neighborhood, listing.city]))]
+    .map((location) => location.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim())
+    .filter((location) => location.length > 2 && rawSearch.includes(location))
+    .sort((a, b) => b.length - a.length)[0];
+  const requestedLocation = intent.locationQuery?.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() ?? inferredLocation;
+
   const locationMatches = (listing: T) => {
-    if (!intent.locationQuery) return true;
+    if (!requestedLocation) return true;
     const location = `${listing.neighborhood} ${listing.city}`.toLowerCase().replace(/[^a-z0-9]+/g, " ");
-    const requested = intent.locationQuery.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-    return location.includes(requested);
+    return location.includes(requestedLocation);
   };
 
   return listings
@@ -112,7 +121,7 @@ export function tailorListings<T extends IntentListing>(listings: T[], intent: S
     .map((listing) => {
       const haystack = `${listing.title} ${listing.neighborhood} ${listing.city} ${listing.features.join(" ")}`.toLowerCase();
       const termMatches = intent.searchTerms.filter((term) => haystack.includes(term)).length;
-      const relevance = termMatches * 10 + intent.requiredFeatures.length * 4 + (intent.locationQuery ? 8 : 0);
+      const relevance = termMatches * 10 + intent.requiredFeatures.length * 4 + (requestedLocation ? 8 : 0);
       return { listing, relevance, termMatches };
     })
     // Free-form words such as "quiet" are ranking hints, not requirements that
