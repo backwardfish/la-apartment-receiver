@@ -30,6 +30,11 @@ test("does not discard valid listings for an unsupported descriptive preference"
   assert.deepEqual(results.map((listing) => listing.neighborhood), ["West Hollywood", "Inglewood"]);
 });
 
+test("filters a bare neighborhood suggestion as a location", () => {
+  const results = tailorListings(fixtures, parseSearchIntent("West Hollywood under $2,800"));
+  assert.deepEqual(results.map((listing) => listing.neighborhood), ["West Hollywood"]);
+});
+
 test("tailors results using hard requirements and descriptive terms", () => {
   const results = tailorListings(fixtures, parseSearchIntent("1 bedroom in West Hollywood under $2,800 with parking"));
   assert.deepEqual(results.map((listing) => listing.neighborhood), ["West Hollywood"]);
