@@ -244,9 +244,13 @@ export default function Home() {
       if (filter === "Under $2,800" && listing.rent > 2800) return false;
       if (filter === "1+ bedroom" && listing.beds < 1) return false;
       if (filter === "Parking" && !listing.features.includes("Parking")) return false;
+      if (filter === "Needs review" && listing.status === "verified") return false;
       return true;
     });
-    return [...filtered].sort((a, b) => sort === "Lowest rent" ? a.rent - b.rent : sort === "Newest" ? a.id.localeCompare(b.id) : b.fit - a.fit);
+    // tailorListings ranks the natural-language request. Keep that ordering for
+    // Best fit instead of immediately reverting to the snapshot's base score.
+    if (sort === "Best fit") return filtered;
+    return [...filtered].sort((a, b) => sort === "Lowest rent" ? a.rent - b.rent : a.id.localeCompare(b.id));
   }, [filter, intent, rejected, sort]);
 
   const notify = (message: string) => {
@@ -341,7 +345,7 @@ export default function Home() {
 
           <div className="toolbar">
             <div className="snapshot-note">Captured research snapshot · not a live availability guarantee</div>
-            <div className="toolbar-selects"><label>Show <select value={filter} onChange={(event) => setFilter(event.target.value)}><option>All matches</option><option>Under $2,800</option><option>1+ bedroom</option><option>Parking</option></select></label><label>Sort <select value={sort} onChange={(event) => setSort(event.target.value)}><option>Best fit</option><option>Lowest rent</option><option>Newest</option></select></label></div>
+            <div className="toolbar-selects"><label>Show <select value={filter} onChange={(event) => setFilter(event.target.value)}><option>All matches</option><option>Under $2,800</option><option>1+ bedroom</option><option>Parking</option><option>Needs review</option></select></label><label>Sort <select value={sort} onChange={(event) => setSort(event.target.value)}><option>Best fit</option><option>Lowest rent</option><option>Newest</option></select></label></div>
           </div>
 
           <div className="section-heading"><div><span className="section-kicker">Receiver feed</span><h2>Strongest matches <span>{visibleListings.length}</span></h2></div><div className="feed-note"><span className="evidence-icon">✦</span> Every card keeps its source</div></div>
