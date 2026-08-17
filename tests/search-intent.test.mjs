@@ -13,7 +13,21 @@ test("parses rent, bedroom, feature, and location intent", () => {
   assert.equal(intent.maxRent, 2800);
   assert.equal(intent.minBedrooms, 1);
   assert.deepEqual(intent.requiredFeatures, ["Parking"]);
-  assert.deepEqual(intent.searchTerms, ["west", "hollywood"]);
+  assert.equal(intent.locationQuery, "west hollywood");
+  assert.deepEqual(intent.searchTerms, []);
+});
+
+test("understands a spelled-out bedroom request and keeps descriptive words as hints", () => {
+  const intent = parseSearchIntent("A quiet one-bedroom in West Hollywood under $2,800 with parking");
+  assert.equal(intent.minBedrooms, 1);
+  assert.equal(intent.locationQuery, "west hollywood");
+  assert.deepEqual(intent.searchTerms, ["quiet"]);
+  assert.deepEqual(tailorListings(fixtures, intent).map((listing) => listing.neighborhood), ["West Hollywood"]);
+});
+
+test("does not discard valid listings for an unsupported descriptive preference", () => {
+  const results = tailorListings(fixtures, parseSearchIntent("one bedroom under $2,800 with parking and lots of sunlight"));
+  assert.deepEqual(results.map((listing) => listing.neighborhood), ["West Hollywood", "Inglewood"]);
 });
 
 test("tailors results using hard requirements and descriptive terms", () => {
