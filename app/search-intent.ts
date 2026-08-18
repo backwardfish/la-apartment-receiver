@@ -4,6 +4,12 @@ export type SearchIntent = {
   minBedrooms?: number;
   requiredFeatures: string[];
   locationQuery?: string;
+  preferredRegions: Array<"south" | "east">;
+  warehouseStyle: boolean;
+  commute?: {
+    origin: string;
+    maxMinutes: number;
+  };
   searchTerms: string[];
 };
 
@@ -42,6 +48,32 @@ const BEDROOM_WORDS: Record<string, number> = {
   five: 5,
 };
 
+const WAREHOUSE_STYLE_ALIASES = [
+  "warehouse",
+  "industrial",
+  "factory conversion",
+  "converted factory",
+  "live work",
+  "live/work",
+  "loft",
+];
+
+function parseCommute(normalized: string) {
+  const match = normalized.match(
+    /\b(?:within|under|less than|up to|no more than)\s+(?:(?:an?|one)\s+hour'?s?|([\d]+)\s*(minutes?|mins?|hours?|hrs?))\s*(?:drive|driving)?\s*(?:of|from|to)\s+([a-z][a-z\s'-]*?)(?=[,.;!?]|$)/,
+  );
+  if (!match) return undefined;
+
+  const amount = match[1] ? Number(match[1]) : 1;
+  const unit = match[2] ?? "hour";
+  const origin = match[3]?.trim().replace(/\s+/g, " ");
+  if (!origin) return undefined;
+  return {
+    origin,
+    maxMinutes: /^h/.test(unit) ? amount * 60 : amount,
+  };
+}
+
 function normalizedWords(value: string) {
   return value
     .toLowerCase()
@@ -64,6 +96,11 @@ export function parseSearchIntent(raw: string): SearchIntent {
   const wordBedroomMatch = normalized.match(/\b(one|two|three|four|five)\s*(?:-|\s)*(?:bed(?:room)?s?|br)\b/);
   const locationMatch = normalized.match(/\b(?:in|near|around)\s+([a-z][a-z\s'-]*?)(?=\s+(?:under|up to|max(?:imum)?|with|and|for)\b|[,.;!?]|$)/);
   const locationQuery = locationMatch?.[1]?.trim().replace(/\s+/g, " ");
+  const preferredRegions = (["south", "east"] as const).filter((region) =>
+    new RegExp(`\\b${region}(?:ern)?(?:\s+la)?\\b`).test(normalized),
+  );
+  const warehouseStyle = WAREHOUSE_STYLE_ALIASES.some((alias) => normalized.includes(alias));
+  const commute = parseCommute(normalized);
   const requiredFeatures = Object.entries(FEATURE_ALIASES)
     .filter(([, aliases]) => aliases.some((alias) => normalized.includes(alias)))
     .map(([feature]) => feature);
@@ -74,7 +111,28 @@ export function parseSearchIntent(raw: string): SearchIntent {
       .flatMap((alias) => alias.trim().split(/\s+/)),
   );
   const locationWords = new Set(locationQuery ? normalizedWords(locationQuery) : []);
-  const searchTerms = [...new Set(normalizedWords(raw).filter((word) => !featureWords.has(word) && !locationWords.has(word)))];
+  const semanticWords = new Set([
+    ...WAREHOUSE_STYLE_ALIASES.flatMap(normalizedWords),
+    ...preferredRegions,
+    ...(commute ? normalizedWords(commute.origin) : []),
+    "within",
+    "style",
+    "hour",
+    "hour's",
+    "hours",
+    "minute",
+    "minutes",
+    "min",
+    "mins",
+    "drive",
+    "driving",
+    "south",
+    "east",
+    "la",
+  ]);
+  const searchTerms = [...new Set(normalizedWords(raw).filter((word) =>
+    !featureWords.has(word) && !locationWords.has(word) && !semanticWords.has(word),
+  ))];
 
   return {
     raw: raw.trim(),
@@ -88,6 +146,9 @@ export function parseSearchIntent(raw: string): SearchIntent {
         : undefined,
     requiredFeatures,
     locationQuery,
+    preferredRegions,
+    warehouseStyle,
+    commute,
     searchTerms,
   };
 }
@@ -138,6 +199,9 @@ export function describeSearchIntent(intent: SearchIntent): string {
   }
   if (intent.requiredFeatures.length) parts.push(intent.requiredFeatures.join(" + ").toLowerCase());
   if (intent.locationQuery) parts.push(`in ${intent.locationQuery}`);
+  if (intent.warehouseStyle) parts.push("warehouse-style");
+  if (intent.preferredRegions.length) parts.push(`${intent.preferredRegions.join(" / ")} LA`);
+  if (intent.commute) parts.push(`within ${intent.commute.maxMinutes} min drive of ${intent.commute.origin}`);
   if (intent.searchTerms.length) parts.push(intent.searchTerms.join(" "));
   return parts.length ? parts.join(" · ") : "your current request";
 }
