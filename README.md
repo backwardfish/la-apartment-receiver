@@ -4,6 +4,32 @@ A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
 Drizzle support.
 
+## Live apartment search
+
+The Netlify `POST /api/search` function queries active long-term rentals from
+RentCast and converts them to Receiver's source-backed listing contract. When a
+search includes a commute constraint, it batches the candidate coordinates
+through Google Routes' traffic-aware route matrix and excludes verified routes
+over the requested limit.
+
+Configure these encrypted environment variables in Netlify for every deploy
+context that should return live results:
+
+- `RENTCAST_API_KEY` — RentCast API key with access to long-term rental listings.
+- `GOOGLE_ROUTES_API_KEY` — Google Maps Platform key with Routes API enabled.
+  Restrict it to the Routes API and to the server-side deployment environment.
+
+The Google key is only required for searches that request a commute time.
+Provider keys are read in the server function and are never sent to the browser.
+No provider URL is configurable: the integration uses the official HTTPS
+endpoints directly.
+
+After adding or rotating variables, trigger a new Netlify deploy. A search
+without RentCast configuration returns `503 search_not_configured`; a
+commute-constrained search also returns that response when the Google key is
+missing. Provider failures return an explicit `502 search_provider_error`
+instead of silently presenting the demo snapshot as live data.
+
 ## Prerequisites
 
 - Node.js `>=22.13.0`
