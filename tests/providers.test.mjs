@@ -38,8 +38,9 @@ test("builds a bounded LA RentCast query from search intent", () => {
   const request = buildLiveSearchRequest("one bedroom in West Hollywood under $2,800");
   const url = buildRentCastUrl(request);
   assert.equal(url.origin, "https://api.rentcast.io");
-  assert.equal(url.searchParams.get("address"), "west hollywood, CA");
-  assert.equal(url.searchParams.get("radius"), "12");
+  assert.equal(url.searchParams.get("city"), "West Hollywood");
+  assert.equal(url.searchParams.get("state"), "CA");
+  assert.equal(url.searchParams.get("address"), null);
   assert.equal(url.searchParams.get("price"), "0:2800");
   assert.equal(url.searchParams.get("bedrooms"), "1:");
   assert.equal(url.searchParams.get("status"), "Active");
@@ -56,8 +57,8 @@ test("adds traffic-aware commute minutes and removes over-limit routes", async (
       { ...sample, id: "la-2", addressLine1: "202 Far Street", latitude: 34.2, longitude: -117.9 },
     ]), { status: 200 });
     return new Response(JSON.stringify([
-      { originIndex: 0, originIndex: 0, condition: "ROUTE_EXISTS", status: {}, duration: "2400s" },
-      { originIndex: 0, originIndex: 1, condition: "ROUTE_EXISTS", status: {}, duration: "3600s" },
+      { originIndex: 0, destinationIndex: 0, condition: "ROUTE_EXISTS", status: {}, duration: "2400s" },
+      { originIndex: 1, destinationIndex: 0, condition: "ROUTE_EXISTS", status: {}, duration: "3600s" },
     ]), { status: 200 });
   };
 
@@ -78,7 +79,7 @@ test("adds traffic-aware commute minutes and removes over-limit routes", async (
   assert.equal(routeRequest.destinations.length, 1);
 });
 
-test("keeps live listings when Google Routes is temporarily unavailable", async () => {
+test("fails explicitly when Google Routes is temporarily unavailable", async () => {
   const request = buildLiveSearchRequest("loft within 45 minutes of Santa Monica");
   let call = 0;
   const fetcher = async () => {
@@ -87,11 +88,11 @@ test("keeps live listings when Google Routes is temporarily unavailable", async 
     return new Response("unavailable", { status: 503 });
   };
 
-  const results = await searchRentCast(request, {
-    rentCastApiKey: "rentcast-test",
-    googleRoutesApiKey: "google-test",
-  }, fetcher, new Date("2026-08-25T12:00:00.000Z"));
-
-  assert.equal(results.length, 1);
-  assert.equal(results[0].commute, undefined);
+  await assert.rejects(
+    searchRentCast(request, {
+      rentCastApiKey: "rentcast-test",
+      googleRoutesApiKey: "google-test",
+    }, fetcher, new Date("2026-08-25T12:00:00.000Z")),
+    /Google Routes returned 503/,
+  );
 });
