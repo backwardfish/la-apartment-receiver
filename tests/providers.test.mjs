@@ -56,8 +56,8 @@ test("adds traffic-aware commute minutes and removes over-limit routes", async (
       { ...sample, id: "la-2", addressLine1: "202 Far Street", latitude: 34.2, longitude: -117.9 },
     ]), { status: 200 });
     return new Response(JSON.stringify([
-      { originIndex: 0, destinationIndex: 0, condition: "ROUTE_EXISTS", status: {}, duration: "2400s" },
-      { originIndex: 0, destinationIndex: 1, condition: "ROUTE_EXISTS", status: {}, duration: "3600s" },
+      { originIndex: 0, originIndex: 0, condition: "ROUTE_EXISTS", status: {}, duration: "2400s" },
+      { originIndex: 0, originIndex: 1, condition: "ROUTE_EXISTS", status: {}, duration: "3600s" },
     ]), { status: 200 });
   };
 
@@ -74,7 +74,8 @@ test("adds traffic-aware commute minutes and removes over-limit routes", async (
   assert.equal(calls[1].init.headers["X-Goog-Api-Key"], "google-test");
   const routeRequest = JSON.parse(calls[1].init.body);
   assert.equal(routeRequest.routingPreference, "TRAFFIC_AWARE");
-  assert.equal(routeRequest.destinations.length, 2);
+  assert.equal(routeRequest.origins.length, 2);
+  assert.equal(routeRequest.destinations.length, 1);
 });
 
 test("keeps live listings when Google Routes is temporarily unavailable", async () => {
