@@ -3,6 +3,10 @@ import type { LiveListing, LiveSearchRequest, ListingFreshness } from "./live-se
 const RENTCAST_URL = "https://api.rentcast.io/v1/listings/rental/long-term";
 const GOOGLE_ROUTES_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
 const LA_CENTER = { latitude: 34.0522, longitude: -118.2437 };
+const SEARCHABLE_CITIES = new Set([
+  "beverly hills", "burbank", "culver city", "glendale", "long beach",
+  "los angeles", "pasadena", "santa monica", "torrance", "west hollywood",
+]);
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -112,12 +116,19 @@ export function normalizeRentCastListing(value: unknown, now = new Date()): Live
   };
 }
 
+function titleCase(value: string) {
+  return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export function buildRentCastUrl(request: LiveSearchRequest) {
   const url = new URL(RENTCAST_URL);
   const { intent } = request;
-  if (intent.locationQuery) {
-    url.searchParams.set("address", `${intent.locationQuery}, CA`);
-    url.searchParams.set("radius", "12");
+  if (intent.locationQuery && SEARCHABLE_CITIES.has(intent.locationQuery)) {
+    url.searchParams.set("city", titleCase(intent.locationQuery));
+    url.searchParams.set("state", "CA");
+  } else if (intent.locationQuery) {
+    url.searchParams.set("address", `${titleCase(intent.locationQuery)}, Los Angeles, CA`);
+    url.searchParams.set("radius", "8");
   } else {
     url.searchParams.set("latitude", String(LA_CENTER.latitude));
     url.searchParams.set("longitude", String(LA_CENTER.longitude));
@@ -164,7 +175,15 @@ export async function searchRentCast(
     index,
     listing: normalizeRentCastListing(item, now),
     coordinate: coordinate(item),
-  })).filter((item): item is typeof item & { listing: LiveListing } => item.listing !== null);
+  }))
+    .filter((item): item is typeof item & { listing: LiveListing } => item.listing !== null)
+    .filter((item) => {
+      const regions = request.intent.preferredRegions;
+      if (regions.length === 0 || !item.coordinate) return true;
+      const south = item.coordinate.latitude < LA_CENTER.latitude;
+      const east = item.coordinate.longitude > LA_CENTER.longitude;
+      return (regions.includes("south") && south) || (regions.includes("east") && east);
+    });
 
   const needsCommute = request.intent.commute;
   if (!needsCommute || !config.googleRoutesApiKey || candidates.length === 0) {
