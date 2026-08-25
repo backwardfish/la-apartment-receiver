@@ -1,12 +1,9 @@
-import { buildLiveSearchRequest, isLiveSearchResponse, type LiveSearchRequest, type LiveSearchResponse } from "../../app/live-search.ts";
+import { buildLiveSearchRequest, type LiveSearchRequest, type LiveSearchResponse } from "../../app/live-search.ts";
+import { searchRentCast } from "../../app/providers.ts";
 
 type Config = {
   path: string;
   method: ["POST"];
-};
-
-type Context = {
-  requestId?: string;
 };
 
 declare const Netlify: {
@@ -35,12 +32,7 @@ function hasLiveSearchRequest(value: unknown): value is LiveSearchRequest {
     && typeof (value as { query?: unknown }).query === "string";
 }
 
-/**
- * The connected provider receives the normalized search intent and must return
- * a LiveSearchResponse. This keeps provider credentials and provider-specific
- * scraping or licensed-feed details on the server, never in the browser.
- */
-export default async (request: Request, context: Context) => {
+export default async (request: Request) => {
   if (request.method !== "POST") {
     return response(unavailable("method_not_allowed", "Use POST to run a live apartment search."), 405);
   }
@@ -58,41 +50,36 @@ export default async (request: Request, context: Context) => {
     return response(unavailable("invalid_request", message), 400);
   }
 
-  const providerUrl = Netlify.env.get("RECEIVER_SEARCH_PROVIDER_URL");
-  const providerApiKey = Netlify.env.get("RECEIVER_SEARCH_PROVIDER_API_KEY");
-  if (!providerUrl || !providerApiKey) {
+  const rentCastApiKey = Netlify.env.get("RENTCAST_API_KEY");
+  const googleRoutesApiKey = Netlify.env.get("GOOGLE_ROUTES_API_KEY");
+  if (!rentCastApiKey || (normalized.intent.commute && !googleRoutesApiKey)) {
+    const missing = [
+      !rentCastApiKey ? "RENTCAST_API_KEY" : null,
+      normalized.intent.commute && !googleRoutesApiKey ? "GOOGLE_ROUTES_API_KEY" : null,
+    ].filter(Boolean).join(" and ");
     return response(
       unavailable(
         "search_not_configured",
-        "Live search is not connected yet. Receiver is showing its source-backed research snapshot instead.",
+        `Live search needs ${missing} configured in Netlify. Receiver is showing its source-backed research snapshot instead.`,
       ),
       503,
     );
   }
 
   try {
-    const providerResponse = await fetch(providerUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${providerApiKey}`,
-        "x-receiver-request-id": context.requestId ?? "",
-      },
-      body: JSON.stringify(normalized),
+    const results = await searchRentCast(normalized, { rentCastApiKey, googleRoutesApiKey });
+    return response({
+      status: "ok",
+      query: normalized.query,
+      searchedAt: new Date().toISOString(),
+      results,
+      provider: normalized.intent.commute ? "RentCast + Google Routes" : "RentCast",
     });
-    const result: unknown = await providerResponse.json().catch(() => null);
-    if (!providerResponse.ok || !isLiveSearchResponse(result)) {
-      return response(
-        unavailable("search_provider_error", "The live-search provider could not return a usable result. Please try again shortly."),
-        502,
-      );
-    }
-
-    return response(result, result.status === "ok" ? 200 : 503);
-  } catch {
+  } catch (error) {
+    console.error("Live apartment search failed", error);
     return response(
-      unavailable("search_provider_unreachable", "The live-search provider is temporarily unavailable. Please try again shortly."),
-      503,
+      unavailable("search_provider_error", "The live-search provider could not return a usable result. Please try again shortly."),
+      502,
     );
   }
 };
