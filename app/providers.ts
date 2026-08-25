@@ -186,12 +186,18 @@ export async function searchRentCast(
     });
 
   const needsCommute = request.intent.commute;
-  if (!needsCommute || !config.googleRoutesApiKey || candidates.length === 0) {
+  if (!needsCommute || candidates.length === 0) {
     return candidates.map(({ listing }) => listing);
   }
+  if (!config.googleRoutesApiKey) {
+    throw new Error("Google Routes is not configured for a commute-constrained search");
+  }
 
+  // A commute-constrained result is only eligible when it has coordinates and
+  // a successful route element. Never leak an unverified candidate into a
+  // response that the user asked us to verify.
   const routable = candidates.filter((item) => item.coordinate).slice(0, 49);
-  if (routable.length === 0) return candidates.map(({ listing }) => listing);
+  if (routable.length === 0) return [];
 
   const routesResponse = await fetcher(GOOGLE_ROUTES_URL, {
     method: "POST",
@@ -210,10 +216,12 @@ export async function searchRentCast(
       regionCode: "US",
     }),
   });
-  if (!routesResponse.ok) return candidates.map(({ listing }) => listing);
+  if (!routesResponse.ok) {
+    throw new Error(`Google Routes returned ${routesResponse.status}`);
+  }
 
   const routes: unknown = await routesResponse.json();
-  if (!Array.isArray(routes)) return candidates.map(({ listing }) => listing);
+  if (!Array.isArray(routes)) throw new Error("Google Routes returned an invalid route matrix");
 
   const commuteByCandidate = new Map<number, number>();
   for (const value of routes) {
