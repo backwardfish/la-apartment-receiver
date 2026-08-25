@@ -68,8 +68,16 @@ function listingAddress(record: UnknownRecord) {
     ?? [text(record.addressLine1), text(record.city), text(record.state), text(record.zipCode)].filter(Boolean).join(", ");
 }
 
-function sourceUrl(record: UnknownRecord) {
-  return text(record.listingUrl) ?? text(record.url) ?? "https://www.rentcast.io/";
+function nestedWebsite(value: unknown) {
+  return value && typeof value === "object" ? text((value as UnknownRecord).website) : undefined;
+}
+
+function sourceUrl(record: UnknownRecord, address: string) {
+  return text(record.listingUrl)
+    ?? text(record.url)
+    ?? nestedWebsite(record.listingOffice)
+    ?? nestedWebsite(record.listingAgent)
+    ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }
 
 export function normalizeRentCastListing(value: unknown, now = new Date()): LiveListing | null {
@@ -95,7 +103,7 @@ export function normalizeRentCastListing(value: unknown, now = new Date()): Live
     sqft: number(record.squareFootage),
     available: text(record.status) === "Active" ? "Listed as active" : text(record.status),
     source: "RentCast",
-    sourceUrl: sourceUrl(record),
+    sourceUrl: sourceUrl(record, address),
     image,
     features: features(record),
     freshness: freshness(lastSeen, now),
@@ -174,8 +182,8 @@ export async function searchRentCast(
       "X-Goog-FieldMask": "originIndex,destinationIndex,status,condition,duration",
     },
     body: JSON.stringify({
-      origins: [{ waypoint: { address: `${needsCommute.origin}, CA` } }],
-      destinations: routable.map((item) => ({ waypoint: { location: { latLng: item.coordinate } } })),
+      origins: routable.map((item) => ({ waypoint: { location: { latLng: item.coordinate } } })),
+      destinations: [{ waypoint: { address: `${needsCommute.origin}, CA` } }],
       travelMode: "DRIVE",
       routingPreference: "TRAFFIC_AWARE",
       departureTime: now.toISOString(),
@@ -192,10 +200,10 @@ export async function searchRentCast(
   for (const value of routes) {
     if (!value || typeof value !== "object") continue;
     const route = value as UnknownRecord;
-    const destinationIndex = number(route.destinationIndex);
+    const originIndex = number(route.originIndex);
     const minutes = durationMinutes(route.duration);
-    if (route.condition !== "ROUTE_EXISTS" || destinationIndex === undefined || minutes === undefined) continue;
-    const candidate = routable[destinationIndex];
+    if (route.condition !== "ROUTE_EXISTS" || originIndex === undefined || minutes === undefined) continue;
+    const candidate = routable[originIndex];
     if (candidate) commuteByCandidate.set(candidate.index, minutes);
   }
 
