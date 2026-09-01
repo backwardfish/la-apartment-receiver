@@ -32,6 +32,44 @@ test("normalizes a RentCast record into the Receiver contract", () => {
   assert.deepEqual(listing.warehouseSignals, ["Loft", "Industrial conversion"]);
   assert.deepEqual(listing.features, ["Parking", "Laundry"]);
   assert.equal(listing.freshness, "live");
+  assert.equal(listing.capturedAt, "2026-08-25T12:00:00.000Z");
+  assert.equal(listing.lastSeenAt, "2026-08-24T12:00:00.000Z");
+});
+
+test("rejects provider records that do not preserve an exact listing source", () => {
+  const listing = normalizeRentCastListing(
+    { ...sample, listingUrl: undefined, url: undefined },
+    new Date("2026-08-25T12:00:00.000Z"),
+  );
+  assert.equal(listing, null);
+});
+
+test("enforces hard amenity and warehouse requirements on live results", async () => {
+  const request = buildLiveSearchRequest("industrial loft with parking under $3,000");
+  const fetcher = async () => new Response(JSON.stringify([
+    sample,
+    {
+      ...sample,
+      id: "la-2",
+      addressLine1: "202 Conventional Street",
+      description: "Conventional apartment with laundry",
+    },
+    {
+      ...sample,
+      id: "la-3",
+      addressLine1: "303 Loft Street",
+      description: "Industrial loft without assigned amenities",
+    },
+  ]), { status: 200 });
+
+  const results = await searchRentCast(
+    request,
+    { rentCastApiKey: "rentcast-test" },
+    fetcher,
+    new Date("2026-08-25T12:00:00.000Z"),
+  );
+
+  assert.deepEqual(results.map((listing) => listing.id), ["rentcast:la-1"]);
 });
 
 test("builds a bounded LA RentCast query from search intent", () => {
@@ -77,6 +115,31 @@ test("adds traffic-aware commute minutes and removes over-limit routes", async (
   assert.equal(routeRequest.routingPreference, "TRAFFIC_AWARE");
   assert.equal(routeRequest.origins.length, 2);
   assert.equal(routeRequest.destinations.length, 1);
+});
+
+test("excludes candidates whose requested commute could not be verified", async () => {
+  const request = buildLiveSearchRequest("loft within 45 minutes of Santa Monica");
+  let call = 0;
+  const fetcher = async () => {
+    call += 1;
+    if (call === 1) return new Response(JSON.stringify([
+      sample,
+      { ...sample, id: "la-2", addressLine1: "202 Unroutable Street", latitude: 34.2, longitude: -117.9 },
+    ]), { status: 200 });
+    return new Response(JSON.stringify([
+      { originIndex: 0, destinationIndex: 0, condition: "ROUTE_EXISTS", status: {}, duration: "2400s" },
+    ]), { status: 200 });
+  };
+
+  const results = await searchRentCast(
+    request,
+    { rentCastApiKey: "rentcast-test", googleRoutesApiKey: "google-test" },
+    fetcher,
+    new Date("2026-08-25T12:00:00.000Z"),
+  );
+
+  assert.deepEqual(results.map((listing) => listing.id), ["rentcast:la-1"]);
+  assert.equal(results[0].commute?.minutes, 40);
 });
 
 test("fails explicitly when Google Routes is temporarily unavailable", async () => {
