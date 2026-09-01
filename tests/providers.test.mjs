@@ -21,6 +21,7 @@ const sample = {
   lastSeenDate: "2026-08-24T12:00:00.000Z",
   listingUrl: "https://example.com/listing",
   description: "Industrial loft with parking, in-unit washer and exposed brick",
+  imageUrl: "https://images.example.com/la-1.jpg",
 };
 
 test("normalizes a RentCast record into the Receiver contract", () => {
@@ -34,6 +35,14 @@ test("normalizes a RentCast record into the Receiver contract", () => {
   assert.equal(listing.freshness, "live");
   assert.equal(listing.capturedAt, "2026-08-25T12:00:00.000Z");
   assert.equal(listing.lastSeenAt, "2026-08-24T12:00:00.000Z");
+});
+
+test("rejects provider records without authentic listing imagery", () => {
+  const listing = normalizeRentCastListing(
+    { ...sample, imageUrl: undefined, photos: undefined },
+    new Date("2026-08-25T12:00:00.000Z"),
+  );
+  assert.equal(listing, null);
 });
 
 test("rejects provider records that do not preserve an exact listing source", () => {
