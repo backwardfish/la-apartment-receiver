@@ -21,6 +21,8 @@ type Listing = {
   image: string;
   features: string[];
   status: Status;
+  capturedAt?: string;
+  lastSeenAt?: string;
   fit: number;
   why: string[];
   unknowns: string[];
@@ -148,7 +150,7 @@ const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD
 const STORAGE_KEY = "receiver:workspace:v1";
 const VALID_IDS = new Set(listings.map((listing) => listing.id));
 
-function presentLiveListing(listing: LiveListing): Listing {
+function presentLiveListing(listing: LiveListing, commuteRequested: boolean): Listing {
   const isFresh = listing.freshness === "live" || listing.freshness === "recent";
   const commuteFit = listing.commute ? Math.max(0, 12 - Math.floor(listing.commute.minutes / 5)) : 0;
   const warehouseFit = Math.min(listing.warehouseSignals.length * 2, 8);
@@ -168,16 +170,19 @@ function presentLiveListing(listing: LiveListing): Listing {
     sourceUrl: listing.sourceUrl,
     image: listing.image ?? "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80",
     features: listing.features,
-    status: isFresh ? "verified" : listing.freshness === "stale" ? "stale" : "needs-verification",
+    status: listing.freshness === "stale" ? "stale" : "needs-verification",
+    capturedAt: listing.capturedAt,
+    lastSeenAt: listing.lastSeenAt,
     fit,
     why: [
       ...(listing.warehouseSignals.length ? [`Warehouse character: ${listing.warehouseSignals.slice(0, 2).join(" · ")}`] : []),
       ...(listing.commute ? [`${listing.commute.minutes}-minute drive to ${listing.commute.origin} when verified`] : []),
-      `Captured ${new Date(listing.capturedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+      ...(listing.lastSeenAt ? [`Provider last saw this listing ${new Date(listing.lastSeenAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`] : []),
+      `Retrieved ${new Date(listing.capturedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
     ],
     unknowns: [
-      ...(listing.freshness === "needs-verification" ? ["Availability needs a fresh confirmation"] : []),
-      ...(listing.commute ? [] : ["Drive time has not been verified"]),
+      "Availability must still be confirmed on the original listing",
+      ...(commuteRequested && !listing.commute ? ["Requested drive time could not be verified"] : []),
     ],
     redFlags: [],
   };
@@ -220,6 +225,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | null>(null);
   const liveRequestId = useRef(0);
+  const searchInputRef = useRef<HTMLTextAreaElement>(null);
 
   const intent = useMemo(() => parseSearchIntent(activeQuery), [activeQuery]);
 
@@ -294,15 +300,30 @@ export default function Home() {
     return [...filtered].sort((a, b) => sort === "Lowest rent" ? a.rent - b.rent : a.id.localeCompare(b.id));
   }, [filter, intent, liveListings, rejected, sort]);
 
+  const summaryStats = useMemo(() => {
+    const rents = visibleListings.map((listing) => listing.rent).sort((a, b) => a - b);
+    const middle = Math.floor(rents.length / 2);
+    const median = rents.length === 0
+      ? null
+      : rents.length % 2
+        ? rents[middle]
+        : Math.round((rents[middle - 1] + rents[middle]) / 2);
+    return {
+      bestFit: visibleListings.length ? Math.max(...visibleListings.map((listing) => listing.fit)) : null,
+      median,
+      sourceBacked: visibleListings.filter((listing) => Boolean(listing.sourceUrl)).length,
+      needsReview: visibleListings.filter((listing) => listing.status !== "verified").length,
+    };
+  }, [visibleListings]);
+
   const notify = (message: string) => {
     setToast(message);
     if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(""), 2600);
   };
 
-  const runSearch = async (event?: FormEvent) => {
-    event?.preventDefault();
-    const nextQuery = query.trim();
+  const runSearchQuery = async (rawQuery: string) => {
+    const nextQuery = rawQuery.trim();
     setActiveQuery(nextQuery);
     setFilter("All matches");
     setSort("Best fit");
@@ -321,7 +342,8 @@ export default function Home() {
       const result = await requestLiveSearch(nextQuery);
       if (requestId !== liveRequestId.current) return;
       if (result.status === "ok") {
-        setLiveListings(result.results.map(presentLiveListing));
+        const requestedIntent = parseSearchIntent(nextQuery);
+        setLiveListings(result.results.map((listing) => presentLiveListing(listing, Boolean(requestedIntent.commute))));
         setLiveSearchState("live");
         notify(result.results.length ? `${result.results.length} live source-backed matches found` : "No live matches found for that exact brief");
         return;
@@ -338,13 +360,14 @@ export default function Home() {
     }
   };
 
+  const runSearch = (event?: FormEvent) => {
+    event?.preventDefault();
+    void runSearchQuery(query);
+  };
+
   const applySuggestion = (suggestion: string) => {
     setQuery(suggestion);
-    setActiveQuery(suggestion);
-    setLiveListings(null);
-    setLiveSearchState("idle");
-    setFilter("All matches");
-    setSort("Best fit");
+    void runSearchQuery(suggestion);
   };
 
   const toggleSaved = (id: string) => {
@@ -374,20 +397,20 @@ export default function Home() {
           <button className="side-link" onClick={() => setFilter("Needs review")}><span>◌</span> Needs review <b>{currentListings.filter((l) => l.status !== "verified").length}</b></button>
         </nav>
         <div className="sidebar-rule" />
-        <div className="sidebar-label">Current search</div>
+        <div className="sidebar-label">Baseline search</div>
         <div className="search-brief">
           <div><span className="brief-icon">⌕</span><span>Los Angeles metro</span></div>
           <div><span className="brief-icon">$</span><span>Up to $2,800 / month</span></div>
           <div><span className="brief-icon">▦</span><span>1+ bedroom · parking</span></div>
-          <div><span className="brief-icon">◷</span><span>Move by September 1</span></div>
+          <div><span className="brief-icon">◷</span><span>Move timing · flexible</span></div>
         </div>
-        <button className="edit-search" onClick={() => notify("Search criteria editor coming next")}>Edit criteria <span>↗</span></button>
-        <div className="sidebar-footer"><span className="live-dot" /> Research snapshot loaded <small>Captured 8 Aug 2026 · demo data</small></div>
+        <button className="edit-search" onClick={() => searchInputRef.current?.focus()}>Edit criteria <span>↗</span></button>
+        <div className="sidebar-footer"><span className="live-dot" /> {liveSearchState === "live" ? "Live results loaded" : "Research snapshot loaded"} <small>{liveSearchState === "live" ? "Source-linked provider data" : "Captured 8 Aug 2026 · demo data"}</small></div>
       </aside>
 
       <section className="main-panel">
         <header className="topbar">
-          <div className="eyebrow"><span className="live-dot" /> Source-backed demo workspace</div>
+          <div className="eyebrow"><span className="live-dot" /> {liveSearchState === "live" ? "Live source-backed workspace" : "Source-backed research workspace"}</div>
           <div className="topbar-actions"><button className="icon-button" aria-label="Notifications" onClick={() => notify("No new notifications")}>♧</button><div className="avatar">A</div></div>
         </header>
 
@@ -399,7 +422,7 @@ export default function Home() {
           <form className="intent-search" onSubmit={runSearch}>
             <span className="intent-icon" aria-hidden="true">⌕</span>
             <label className="sr-only" htmlFor="apartment-intent">Describe the apartment you want</label>
-            <textarea id="apartment-intent" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try: A quiet one-bedroom in West Hollywood under $2,800 with parking" rows={2} />
+            <textarea ref={searchInputRef} id="apartment-intent" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try: A quiet one-bedroom in West Hollywood under $2,800 with parking" rows={2} />
             <button type="submit" disabled={liveSearchState === "loading"}>{liveSearchState === "loading" ? "Researching…" : "Tailor my search"} <span>→</span></button>
           </form>
           <div className="intent-suggestions" aria-label="Example searches">
@@ -407,16 +430,17 @@ export default function Home() {
             {["West Hollywood under $2,800", "1 bedroom with parking", "Santa Monica with laundry"].map((suggestion) => <button key={suggestion} onClick={() => applySuggestion(suggestion)}>{suggestion}</button>)}
           </div>
           {activeQuery && <div className="active-intent"><span>✦ Tailored for</span><strong>{describeSearchIntent(intent)}</strong><button onClick={() => { setQuery(""); setActiveQuery(""); setLiveListings(null); setLiveSearchState("idle"); }}>Reset</button></div>}
+          {liveSearchState === "unavailable" && <div className="active-intent"><span>Live search unavailable</span><strong>Showing the clearly labeled research snapshot instead</strong></div>}
 
           <section className="stat-strip" aria-label="Search summary">
-            <div><span className="stat-label">Best fit</span><strong>94</strong><small>score</small></div>
-            <div><span className="stat-label">Median rent</span><strong>$2,450</strong><small>of visible matches</small></div>
-            <div><span className="stat-label">Source-backed</span><strong>6</strong><small>research examples</small></div>
-            <div><span className="stat-label">Needs review</span><strong>4</strong><small>before outreach</small></div>
+            <div><span className="stat-label">Best fit</span><strong>{summaryStats.bestFit ?? "—"}</strong><small>score</small></div>
+            <div><span className="stat-label">Median rent</span><strong>{summaryStats.median === null ? "—" : money.format(summaryStats.median)}</strong><small>of visible matches</small></div>
+            <div><span className="stat-label">Source-backed</span><strong>{summaryStats.sourceBacked}</strong><small>visible matches</small></div>
+            <div><span className="stat-label">Needs review</span><strong>{summaryStats.needsReview}</strong><small>before outreach</small></div>
           </section>
 
           <div className="toolbar">
-            <div className="snapshot-note">{liveSearchState === "live" ? "Live provider results · verify availability before outreach" : "Captured research snapshot · not a live availability guarantee"}</div>
+            <div className="snapshot-note">{liveSearchState === "live" ? "Live provider results · verify availability before outreach" : liveSearchState === "unavailable" ? "Live search unavailable · showing the captured snapshot" : "Captured research snapshot · not a live availability guarantee"}</div>
             <div className="toolbar-selects"><label>Show <select value={filter} onChange={(event) => setFilter(event.target.value)}><option>All matches</option><option>Under $2,800</option><option>1+ bedroom</option><option>Parking</option><option>Needs review</option></select></label><label>Sort <select value={sort} onChange={(event) => setSort(event.target.value)}><option>Best fit</option><option>Lowest rent</option><option>Newest</option></select></label></div>
           </div>
 
@@ -427,11 +451,11 @@ export default function Home() {
             <div className="card-body"><div className="card-topline"><span className="card-location">{listing.neighborhood} <i>·</i> {listing.city}</span><Score value={listing.fit} /></div><button className="card-title" onClick={() => setSelectedId(listing.id)}>{listing.title}</button><div className="card-facts"><strong>{money.format(listing.rent)}</strong><span>/ mo</span><i>·</i><span>{listing.beds === 0 ? "Studio" : `${listing.beds} bed`}</span><i>·</i><span>{listing.baths} bath</span></div><div className="feature-row">{listing.features.slice(0, 3).map((feature) => <span key={feature}>{feature}</span>)}</div><div className="card-actions"><button className={saved.includes(listing.id) ? "action-button saved" : "action-button"} onClick={() => toggleSaved(listing.id)}>{saved.includes(listing.id) ? "♥ Saved" : "♡ Save"}</button><button className={compare.includes(listing.id) ? "action-button selected" : "action-button"} onClick={() => toggleCompare(listing.id)}>{compare.includes(listing.id) ? "✓ Comparing" : "+ Compare"}</button><button className="more-button" onClick={() => setSelectedId(listing.id)} aria-label="More actions">•••</button></div></div>
           </article>)}</div>}
 
-          <section className="trust-band"><div className="trust-symbol">✦</div><div><strong>What “verified” means here</strong><p>Source facts are captured from the original listing page. A fresh page capture is not a guarantee of availability, so “needs review” stays visible until you confirm it.</p></div><button onClick={() => notify("Verification policy opened")}>Read policy ↗</button></section>
+          <section className="trust-band"><div className="trust-symbol">✦</div><div><strong>How Receiver handles evidence</strong><p>Live records require an exact listing link and carry separate retrieval and provider last-seen times. Availability stays “needs review” until you confirm it on the original page.</p></div><button onClick={() => notify("Every live result keeps its exact listing source and freshness timestamps")}>Read policy ↗</button></section>
         </div>
       </section>
 
-      {selected && <div className="drawer-backdrop" onClick={() => setSelectedId(null)}><aside className="detail-drawer" role="dialog" aria-modal="true" aria-label={`${selected.title} details`} onClick={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setSelectedId(null)} aria-label="Close details">×</button><div className="drawer-photo"><img src={selected.image} alt="" /><span className="drawer-photo-count">1 source image</span></div><div className="drawer-content"><div className="drawer-kicker"><StatusPill status={selected.status} /><span>Snapshot captured 8 Aug 2026</span></div><h2>{selected.title}</h2><p className="drawer-address">{selected.neighborhood}, {selected.city} <span>·</span> Los Angeles metro</p><div className="drawer-rent"><strong>{money.format(selected.rent)}</strong><span>/ month</span><Score value={selected.fit} large /></div><div className="drawer-grid"><div><small>Layout</small><strong>{selected.beds === 0 ? "Studio" : `${selected.beds} bed`} · {selected.baths} bath</strong></div><div><small>Availability</small><strong>{selected.available} when captured</strong></div><div><small>Source</small><strong>{selected.source}</strong></div><div><small>Evidence</small><strong>Source reference linked</strong></div></div><div className="drawer-section"><h3>Why it matches</h3><ul className="why-list">{selected.why.map((item) => <li key={item}><span>✓</span>{item}</li>)}</ul></div>{selected.unknowns.length > 0 && <div className="drawer-section caution"><h3>Needs confirmation</h3><ul>{selected.unknowns.map((item) => <li key={item}>{item}</li>)}</ul></div>}{selected.redFlags.length > 0 && <div className="drawer-section warning"><h3>Watch-outs</h3><ul>{selected.redFlags.map((item) => <li key={item}>{item}</li>)}</ul></div>}<div className="drawer-section"><h3>Features</h3><div className="drawer-features">{selected.features.map((feature) => <span key={feature}>{feature}</span>)}</div></div><div className="drawer-actions"><button className="primary-action" onClick={() => notify("Demo only — inquiry drafting is not connected yet")}>Preview inquiry step</button><button className="secondary-action" onClick={() => toggleSaved(selected.id)}>{saved.includes(selected.id) ? "♥ Saved" : "♡ Save to shortlist"}</button><button className="secondary-action" onClick={() => rejectListing(selected.id)}>Hide from this search</button><a className="source-link" href={selected.sourceUrl} target="_blank" rel="noreferrer">Open source reference ↗</a></div><p className="drawer-footnote">No message will be sent and no form will be submitted from this demo.</p></div></aside></div>}
+      {selected && <div className="drawer-backdrop" onClick={() => setSelectedId(null)}><aside className="detail-drawer" role="dialog" aria-modal="true" aria-label={`${selected.title} details`} onClick={(event) => event.stopPropagation()}><button className="drawer-close" onClick={() => setSelectedId(null)} aria-label="Close details">×</button><div className="drawer-photo"><img src={selected.image} alt="" /><span className="drawer-photo-count">1 source image</span></div><div className="drawer-content"><div className="drawer-kicker"><StatusPill status={selected.status} /><span>{selected.capturedAt ? `Retrieved ${new Date(selected.capturedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : "Snapshot captured 8 Aug 2026"}</span></div><h2>{selected.title}</h2><p className="drawer-address">{selected.neighborhood}, {selected.city} <span>·</span> Los Angeles metro</p><div className="drawer-rent"><strong>{money.format(selected.rent)}</strong><span>/ month</span><Score value={selected.fit} large /></div><div className="drawer-grid"><div><small>Layout</small><strong>{selected.beds === 0 ? "Studio" : `${selected.beds} bed`} · {selected.baths} bath</strong></div><div><small>Availability</small><strong>{selected.available} when captured</strong></div><div><small>Source</small><strong>{selected.source}</strong></div><div><small>Evidence</small><strong>Source reference linked</strong></div></div><div className="drawer-section"><h3>Why it matches</h3><ul className="why-list">{selected.why.map((item) => <li key={item}><span>✓</span>{item}</li>)}</ul></div>{selected.unknowns.length > 0 && <div className="drawer-section caution"><h3>Needs confirmation</h3><ul>{selected.unknowns.map((item) => <li key={item}>{item}</li>)}</ul></div>}{selected.redFlags.length > 0 && <div className="drawer-section warning"><h3>Watch-outs</h3><ul>{selected.redFlags.map((item) => <li key={item}>{item}</li>)}</ul></div>}<div className="drawer-section"><h3>Features</h3><div className="drawer-features">{selected.features.map((feature) => <span key={feature}>{feature}</span>)}</div></div><div className="drawer-actions"><button className="primary-action" onClick={() => notify("Demo only — inquiry drafting is not connected yet")}>Preview inquiry step</button><button className="secondary-action" onClick={() => toggleSaved(selected.id)}>{saved.includes(selected.id) ? "♥ Saved" : "♡ Save to shortlist"}</button><button className="secondary-action" onClick={() => rejectListing(selected.id)}>Hide from this search</button><a className="source-link" href={selected.sourceUrl} target="_blank" rel="noreferrer">Open source reference ↗</a></div><p className="drawer-footnote">No message will be sent and no form will be submitted from this demo.</p></div></aside></div>}
       {compare.length > 0 && <div className="compare-tray"><div><strong>{compare.length} selected for comparison</strong><span>{compare.map((id) => currentListings.find((listing) => listing.id === id)?.neighborhood).filter(Boolean).join(" · ")}</span></div><button onClick={() => notify("Comparison view is ready for the next Receiver milestone")}>Compare now ↗</button><button className="tray-close" onClick={() => setCompare([])} aria-label="Clear comparison">×</button></div>}
       {toast && <div className="toast"><span>✓</span>{toast}</div>}
     </main>
