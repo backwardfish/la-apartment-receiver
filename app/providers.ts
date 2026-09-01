@@ -23,6 +23,21 @@ function number(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function httpUrl(value: unknown) {
+  const valueText = text(value);
+  if (!valueText) return undefined;
+  try {
+    const url = new URL(valueText);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function nestedText(value: unknown, key: string) {
+  return value && typeof value === "object" ? text((value as UnknownRecord)[key]) : undefined;
+}
+
 function dateValue(value: unknown) {
   const valueText = text(value);
   if (!valueText || Number.isNaN(Date.parse(valueText))) return undefined;
@@ -72,16 +87,8 @@ function listingAddress(record: UnknownRecord) {
     ?? [text(record.addressLine1), text(record.city), text(record.state), text(record.zipCode)].filter(Boolean).join(", ");
 }
 
-function nestedWebsite(value: unknown) {
-  return value && typeof value === "object" ? text((value as UnknownRecord).website) : undefined;
-}
-
-function sourceUrl(record: UnknownRecord, address: string) {
-  return text(record.listingUrl)
-    ?? text(record.url)
-    ?? nestedWebsite(record.listingOffice)
-    ?? nestedWebsite(record.listingAgent)
-    ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+function exactSourceUrl(record: UnknownRecord) {
+  return httpUrl(record.listingUrl) ?? httpUrl(record.url);
 }
 
 export function normalizeRentCastListing(value: unknown, now = new Date()): LiveListing | null {
@@ -91,11 +98,12 @@ export function normalizeRentCastListing(value: unknown, now = new Date()): Live
   const address = listingAddress(record);
   const id = text(record.id);
   const city = text(record.city);
-  if (!id || !address || !city || rent === undefined) return null;
+  const listingUrl = exactSourceUrl(record);
+  if (!id || !address || !city || rent === undefined || !listingUrl) return null;
 
   const lastSeen = dateValue(record.lastSeenDate) ?? dateValue(record.listedDate);
-  const image = text(record.imageUrl)
-    ?? (Array.isArray(record.photos) ? record.photos.find((item): item is string => typeof item === "string") : undefined);
+  const image = httpUrl(record.imageUrl)
+    ?? (Array.isArray(record.photos) ? record.photos.map(httpUrl).find(Boolean) : undefined);
   return {
     id: `rentcast:${id}`,
     title: text(record.addressLine1) ?? address,
@@ -106,12 +114,13 @@ export function normalizeRentCastListing(value: unknown, now = new Date()): Live
     baths: number(record.bathrooms) ?? 1,
     sqft: number(record.squareFootage),
     available: text(record.status) === "Active" ? "Listed as active" : text(record.status),
-    source: "RentCast",
-    sourceUrl: sourceUrl(record, address),
+    source: nestedText(record.listingOffice, "name") ?? "RentCast feed",
+    sourceUrl: listingUrl,
     image,
     features: features(record),
     freshness: freshness(lastSeen, now),
-    capturedAt: (lastSeen ?? now).toISOString(),
+    capturedAt: now.toISOString(),
+    lastSeenAt: lastSeen?.toISOString(),
     warehouseSignals: warehouseSignals(record),
   };
 }
@@ -164,14 +173,15 @@ export async function searchRentCast(
 ): Promise<LiveListing[]> {
   const rentCastResponse = await fetcher(buildRentCastUrl(request), {
     headers: { "X-Api-Key": config.rentCastApiKey, accept: "application/json" },
+    signal: AbortSignal.timeout(12_000),
   });
   if (!rentCastResponse.ok) throw new Error(`RentCast returned ${rentCastResponse.status}`);
 
   const payload: unknown = await rentCastResponse.json();
   if (!Array.isArray(payload)) throw new Error("RentCast returned an invalid listing payload");
 
+  const seen = new Set<string>();
   const candidates = payload.map((item, index) => ({
-    item,
     index,
     listing: normalizeRentCastListing(item, now),
     coordinate: coordinate(item),
@@ -179,10 +189,31 @@ export async function searchRentCast(
     .filter((item): item is typeof item & { listing: LiveListing } => item.listing !== null)
     .filter((item) => {
       const regions = request.intent.preferredRegions;
-      if (regions.length === 0 || !item.coordinate) return true;
+      if (regions.length === 0) return true;
+      if (!item.coordinate) return false;
       const south = item.coordinate.latitude < LA_CENTER.latitude;
       const east = item.coordinate.longitude > LA_CENTER.longitude;
       return (regions.includes("south") && south) || (regions.includes("east") && east);
+    })
+    .filter(({ listing }) =>
+      request.intent.requiredFeatures.every((feature) => listing.features.includes(feature))
+      && (!request.intent.warehouseStyle || listing.warehouseSignals.length > 0),
+    )
+    .filter(({ listing }) => {
+      const key = [listing.title, listing.city, listing.rent, listing.beds]
+        .join("|")
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => {
+      const relevance = (listing: LiveListing) => {
+        const haystack = `${listing.title} ${listing.neighborhood} ${listing.city} ${listing.features.join(" ")} ${listing.warehouseSignals.join(" ")}`.toLowerCase();
+        return request.intent.searchTerms.filter((term) => haystack.includes(term)).length;
+      };
+      return relevance(b.listing) - relevance(a.listing);
     });
 
   const needsCommute = request.intent.commute;
@@ -206,6 +237,7 @@ export async function searchRentCast(
       "X-Goog-Api-Key": config.googleRoutesApiKey,
       "X-Goog-FieldMask": "originIndex,destinationIndex,status,condition,duration",
     },
+    signal: AbortSignal.timeout(12_000),
     body: JSON.stringify({
       origins: routable.map((item) => ({ waypoint: { location: { latLng: item.coordinate } } })),
       destinations: [{ waypoint: { address: `${needsCommute.origin}, CA` } }],
@@ -234,13 +266,12 @@ export async function searchRentCast(
     if (candidate) commuteByCandidate.set(candidate.index, minutes);
   }
 
-  return candidates
-    .map(({ listing, index }) => {
-      const minutes = commuteByCandidate.get(index);
-      return minutes === undefined ? listing : {
-        ...listing,
-        commute: { origin: needsCommute.origin, minutes, verifiedAt: now.toISOString() },
-      };
-    })
-    .filter((listing) => !listing.commute || listing.commute.minutes <= needsCommute.maxMinutes);
+  return routable.flatMap(({ listing, index }) => {
+    const minutes = commuteByCandidate.get(index);
+    if (minutes === undefined || minutes > needsCommute.maxMinutes) return [];
+    return [{
+      ...listing,
+      commute: { origin: needsCommute.origin, minutes, verifiedAt: now.toISOString() },
+    }];
+  });
 }
