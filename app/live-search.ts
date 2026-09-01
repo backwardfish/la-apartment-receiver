@@ -14,7 +14,7 @@ export type LiveListing = {
   available?: string;
   source: string;
   sourceUrl: string;
-  image?: string;
+  image: string;
   features: string[];
   freshness: ListingFreshness;
   capturedAt: string;
