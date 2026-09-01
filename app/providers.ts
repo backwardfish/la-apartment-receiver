@@ -101,9 +101,11 @@ export function normalizeRentCastListing(value: unknown, now = new Date()): Live
   const listingUrl = exactSourceUrl(record);
   if (!id || !address || !city || rent === undefined || !listingUrl) return null;
 
-  const lastSeen = dateValue(record.lastSeenDate) ?? dateValue(record.listedDate);
+  const lastSeen = dateValue(record.lastSeenDate);
+  const freshnessDate = lastSeen ?? dateValue(record.listedDate);
   const image = httpUrl(record.imageUrl)
     ?? (Array.isArray(record.photos) ? record.photos.map(httpUrl).find(Boolean) : undefined);
+  if (!image) return null;
   return {
     id: `rentcast:${id}`,
     title: text(record.addressLine1) ?? address,
@@ -118,7 +120,7 @@ export function normalizeRentCastListing(value: unknown, now = new Date()): Live
     sourceUrl: listingUrl,
     image,
     features: features(record),
-    freshness: freshness(lastSeen, now),
+    freshness: freshness(freshnessDate, now),
     capturedAt: now.toISOString(),
     lastSeenAt: lastSeen?.toISOString(),
     warehouseSignals: warehouseSignals(record),
