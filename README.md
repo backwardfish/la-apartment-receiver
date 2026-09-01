@@ -1,134 +1,58 @@
-# vinext-starter
+# LA Apartment Receiver
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+A source-linked Los Angeles rental search workspace. The interface accepts a natural-language apartment brief, retrieves current provider inventory, preserves exact listing links and freshness timestamps, and can verify drive-time constraints.
 
-## Live apartment search
+## Production search
 
-The Netlify `POST /api/search` function queries active long-term rentals from
-RentCast and converts them to Receiver's source-backed listing contract. When a
-search includes a commute constraint, it batches the candidate coordinates
-through Google Routes' traffic-aware route matrix and excludes verified routes
-over the requested limit.
+The Netlify `POST /api/search` function:
 
-Configure these encrypted environment variables in Netlify for every deploy
-context that should return live results:
+- queries active long-term rentals from RentCast;
+- enforces parsed budget, bedroom, amenity, location, warehouse-style, and regional requirements;
+- rejects records without an exact HTTP(S) listing link or authentic listing image;
+- deduplicates repeated records;
+- keeps retrieval time separate from the provider's last-seen time;
+- uses Google Routes for traffic-aware commute constraints;
+- excludes every commute-constrained candidate that cannot be successfully routed;
+- fails explicitly instead of presenting demo results as live data; and
+- rate-limits callers to protect provider quotas and cost.
 
-- `RENTCAST_API_KEY` — RentCast API key with access to long-term rental listings.
-- `GOOGLE_ROUTES_API_KEY` — Google Maps Platform key with Routes API enabled.
-  Restrict it to the Routes API and to the server-side deployment environment.
+The browser clearly labels the static research snapshot whenever live search is unavailable.
 
-The Google key is only required for searches that request a commute time.
-Provider keys are read in the server function and are never sent to the browser.
-No provider URL is configurable: the integration uses the official HTTPS
-endpoints directly.
+## Required Netlify environment variables
 
-After adding or rotating variables, trigger a new Netlify deploy. A search
-without RentCast configuration returns `503 search_not_configured`; a
-commute-constrained search also returns that response when the Google key is
-missing. Provider failures return an explicit `502 search_provider_error`
-instead of silently presenting the demo snapshot as live data.
+Configure secrets in Netlify, never in this repository:
 
-## Prerequisites
+- `RENTCAST_API_KEY` — required for live rental inventory.
+- `GOOGLE_ROUTES_API_KEY` — required only for commute-constrained searches. Enable the Google Routes API and restrict the key to server-side use and that API.
 
-- Node.js `>=22.13.0`
-- Linux with `flock`, `curl`, and GNU `timeout`
+Redeploy after adding or rotating either value.
 
-## Sites Lifecycle
+## Local verification
 
-The Sites lifecycle CLI runs the locked dependency install before returning this checkout. Edit the source under `app/`, then checkpoint when a coherent milestone is ready to inspect or share. The remote Sites builder runs `npm run build` against the pushed commit. Do not repeat install or build as a normal pre-checkpoint step.
+Use Node.js 22.13 or later:
 
-This starter does not use `wrangler.jsonc`.
-
-`install:ci` is intentionally a single, non-retrying `npm ci`. It refuses a concurrent install for the same project, consumes a matching image-seeded npm cache with `--prefer-offline` while retaining registry fallback for a missing cache object, otherwise downloads and verifies the complete vinext tarball recorded in `package-lock.json`, limits npm to one socket, and terminates a stalled install. `build` applies a short timeout and then validates the Sites artifact. These helpers target Linux and use GNU `timeout`; they are not native macOS scripts.
-
-Scripts that need writable project-scoped home, npm, XDG, and temporary paths use `scripts/sites-env.sh`. The `dev` and `start` scripts honor the caller's runtime environment and keep Wrangler logs inside the checkout. The generated `.sites-runtime/` directory is disposable and ignored by Git.
-
-## Included Shape
-
-- edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+npm ci
+npm test
+npm run lint
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+Pull requests run the same production build, regression tests, and lint checks in GitHub Actions.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+## Netlify configuration
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+Netlify uses:
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+- build command: `npm run build:netlify`
+- publish directory: `dist/client`
+- function directory: `netlify/functions`
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+The provider keys remain server-side in the Netlify function.
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+## Current scope and known limits
 
-## Diagnostic Commands
-
-- `npm run install:ci`: perform the one bounded lockfile install
-- `npm run dev`: start the Vite/Vinext development server
-- `npm run build`: build and validate the deployable Sites artifact
-- `npm run start`: start the built Vinext application
-- `npm test`: build, validate, and verify the rendered development-preview metadata
-- `npm run validate:artifact`: recheck an existing artifact's manifest and ESM `default.fetch` export
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-Use build and validation commands for targeted diagnosis after a remote failure, not as part of the normal checkpoint path.
-
-The timeout defaults can be overridden for a controlled canary with `SITES_INSTALL_TIMEOUT`, `SITES_INSTALL_KILL_AFTER`, `SITES_BUILD_TIMEOUT`, and `SITES_BUILD_KILL_AFTER`. A timeout fails the command; the helpers never retry an unchanged install or build.
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+- Live structured inventory currently comes from RentCast only.
+- Craigslist, Facebook Marketplace, sublease communities, and local property-manager feeds require separate compliant connectors.
+- Saved live listings persist for the current browser session; a durable cross-session shortlist is not yet implemented.
+- Comparison and inquiry buttons remain labeled preview interactions and do not send messages or submit forms.
+- Provider activity is not a guarantee of availability. Live results remain marked as needing confirmation on the original listing page.
