@@ -31,8 +31,16 @@ test("does not discard valid listings for an unsupported descriptive preference"
 });
 
 test("filters a bare neighborhood suggestion as a location", () => {
-  const results = tailorListings(fixtures, parseSearchIntent("West Hollywood under $2,800"));
+  const intent = parseSearchIntent("West Hollywood under $2,800");
+  assert.equal(intent.locationQuery, "west hollywood");
+  const results = tailorListings(fixtures, intent);
   assert.deepEqual(results.map((listing) => listing.neighborhood), ["West Hollywood"]);
+});
+
+test("recognizes a bare neighborhood followed by an amenity", () => {
+  const intent = parseSearchIntent("Santa Monica with laundry");
+  assert.equal(intent.locationQuery, "santa monica");
+  assert.deepEqual(intent.requiredFeatures, ["Laundry"]);
 });
 
 test("tailors results using hard requirements and descriptive terms", () => {
