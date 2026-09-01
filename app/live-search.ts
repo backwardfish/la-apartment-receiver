@@ -18,6 +18,7 @@ export type LiveListing = {
   features: string[];
   freshness: ListingFreshness;
   capturedAt: string;
+  lastSeenAt?: string;
   warehouseSignals: string[];
   commute?: {
     origin: string;
@@ -50,13 +51,17 @@ export type LiveSearchResponse = LiveSearchSuccess | LiveSearchUnavailable;
 export function buildLiveSearchRequest(query: string): LiveSearchRequest {
   const trimmedQuery = query.trim();
   if (!trimmedQuery) throw new Error("Describe the apartment you want before searching.");
+  if (trimmedQuery.length > 500) throw new Error("Keep the apartment search under 500 characters.");
   return { query: trimmedQuery, intent: parseSearchIntent(trimmedQuery) };
 }
 
 export function isLiveSearchResponse(value: unknown): value is LiveSearchResponse {
   if (!value || typeof value !== "object" || !("status" in value)) return false;
   const response = value as { status?: unknown; results?: unknown; query?: unknown; searchedAt?: unknown; provider?: unknown };
-  if (response.status === "unconfigured" || response.status === "unavailable") return true;
+  if (response.status === "unconfigured" || response.status === "unavailable") {
+    const unavailable = value as { code?: unknown; message?: unknown };
+    return typeof unavailable.code === "string" && typeof unavailable.message === "string";
+  }
   return response.status === "ok"
     && typeof response.query === "string"
     && typeof response.searchedAt === "string"
