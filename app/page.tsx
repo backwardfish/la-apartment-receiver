@@ -168,7 +168,7 @@ function presentLiveListing(listing: LiveListing, commuteRequested: boolean): Li
     available: listing.available ?? "Availability needs confirmation",
     source: listing.source,
     sourceUrl: listing.sourceUrl,
-    image: listing.image ?? "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80",
+    image: listing.image,
     features: listing.features,
     status: listing.freshness === "stale" ? "stale" : "needs-verification",
     capturedAt: listing.capturedAt,
