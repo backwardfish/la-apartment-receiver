@@ -4,6 +4,11 @@ import { searchRentCast } from "../../app/providers.ts";
 type Config = {
   path: string;
   method: ["POST"];
+  rateLimit: {
+    windowLimit: number;
+    windowSize: number;
+    aggregateBy: ["ip", "domain"];
+  };
 };
 
 declare const Netlify: {
@@ -15,6 +20,7 @@ declare const Netlify: {
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
+  "x-content-type-options": "nosniff",
 };
 
 function response(body: LiveSearchResponse, status = 200) {
@@ -35,6 +41,14 @@ function hasLiveSearchRequest(value: unknown): value is LiveSearchRequest {
 export default async (request: Request) => {
   if (request.method !== "POST") {
     return response(unavailable("method_not_allowed", "Use POST to run a live apartment search."), 405);
+  }
+
+  const contentLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > 20_000) {
+    return response(unavailable("payload_too_large", "The apartment search request is too large."), 413);
+  }
+  if (!request.headers.get("content-type")?.toLowerCase().includes("application/json")) {
+    return response(unavailable("unsupported_media_type", "Send the apartment search as JSON."), 415);
   }
 
   const payload: unknown = await request.json().catch(() => null);
@@ -87,4 +101,9 @@ export default async (request: Request) => {
 export const config: Config = {
   path: "/api/search",
   method: ["POST"],
+  rateLimit: {
+    windowLimit: 15,
+    windowSize: 60,
+    aggregateBy: ["ip", "domain"],
+  },
 };
