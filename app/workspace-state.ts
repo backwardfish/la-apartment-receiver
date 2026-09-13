@@ -72,7 +72,9 @@ export function restoreWorkspace(snapshots: PersistedListing[], now=Date.now()):
     const retainedListings=sanitizePersistedListings(value.retainedListings)??[];
     for(const listing of [...(liveListings??[]),...retainedListings])if(listing.capturedAt&&now-Date.parse(listing.capturedAt)>7*86400000)listing.status='stale';
     const allowed=new Set([...snapshots,...(liveListings??[]),...retainedListings].map(l=>l.id));
-    return {liveListings,retainedListings,saved:validWorkspaceIds(value.saved,allowed),rejected:validWorkspaceIds(value.rejected,allowed),compare:validWorkspaceIds(value.compare,allowed,3),activeQuery:typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):''};
+    const saved=validWorkspaceIds(value.saved,allowed),compare=validWorkspaceIds(value.compare,allowed,3);
+    const retained=retainWorkspaceListings(retainedListings,[...snapshots,...(liveListings??[])],[...saved,...compare]);
+    return {liveListings,retainedListings:retained,saved,rejected:validWorkspaceIds(value.rejected,allowed),compare,activeQuery:typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):''};
   } catch { clearWorkspace();return null; }
 }
 export function persistWorkspace(workspace: Workspace, now=Date.now()): boolean {

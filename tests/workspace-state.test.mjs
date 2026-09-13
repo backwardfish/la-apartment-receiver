@@ -49,6 +49,9 @@ test('v3 migration preserves snapshot saves alongside live results and clear rem
   data.set('receiver:workspace:v3',JSON.stringify({version:3,savedAt:Date.now(),saved:[snapshot.id,listing.id],compare:[],rejected:[],activeQuery:'loft',liveListings:[listing]}));
   const restored=restoreWorkspace([snapshot]);
   assert.deepEqual(restored.saved,[snapshot.id,listing.id]);
+  assert.deepEqual(restored.retainedListings.map(x=>x.id),[snapshot.id,listing.id]);
+  assert.ok(persistWorkspace({...restored,liveListings:[]}));
+  assert.deepEqual(restoreWorkspace([snapshot]).saved,[snapshot.id,listing.id]);
   assert.ok(persistWorkspace(restored));
   assert.ok(data.has(STORAGE_KEY));
   assert.ok(!data.has('receiver:workspace:v3'));
