@@ -80,10 +80,8 @@ export async function requestLiveSearch(query: string, signal?: AbortSignal): Pr
     signal,
   });
 
-  if (response.status === 429) return { status: 'unavailable', code: 'rate_limited', message: 'Too many searches. Please wait a minute and try again.' };
   const body: unknown = await response.json().catch(() => null);
-  if (!isLiveSearchResponse(body)) {
-    throw new Error("Receiver received an invalid response from the live-search service.");
-  }
-  return body;
+  if (isLiveSearchResponse(body) && (response.ok || body.status !== 'ok')) return body;
+  if (response.status === 429) return { status: 'unavailable', code: 'rate_limited', message: 'Too many searches. Please wait a minute and try again.' };
+  throw new Error("Receiver received an invalid response from the live-search service.");
 }

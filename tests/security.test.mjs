@@ -107,3 +107,12 @@ test('client gives a useful message for platform rate limiting',async(t)=>{
  t.mock.method(globalThis,'fetch',async()=>new Response('Too many requests',{status:429}));
  const result=await requestLiveSearch('loft');assert.equal(result.code,'rate_limited');
 });
+test('client preserves the shared allowance explanation and does not claim a one-minute reset',async(t)=>{
+ const body={status:'unavailable',code:'search_allowance_exhausted',message:'The shared live-search allowance has been reached. Please try again after it resets.'};
+ t.mock.method(globalThis,'fetch',async()=>Response.json(body,{status:429}));
+ assert.deepEqual(await requestLiveSearch('loft'),body);
+});
+test('client rejects successful-looking data returned with a failed HTTP status',async(t)=>{
+ t.mock.method(globalThis,'fetch',async()=>Response.json({status:'ok',query:'loft',searchedAt:new Date().toISOString(),results:[],provider:'test'},{status:502}));
+ await assert.rejects(requestLiveSearch('loft'),/invalid response/);
+});
