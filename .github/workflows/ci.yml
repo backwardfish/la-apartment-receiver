@@ -35,6 +35,8 @@ jobs:
         run: npm ci
       - name: Verify production artifact, tests, lint, and functions
         run: npm run verify
+      - name: Audit locked dependencies
+        run: npm audit --audit-level=moderate
 
   release-gate:
     if: always()
