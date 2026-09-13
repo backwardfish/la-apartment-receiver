@@ -1,58 +1,33 @@
 # LA Apartment Receiver
 
-A source-linked Los Angeles rental search workspace. The interface accepts a natural-language apartment brief, retrieves current provider inventory, preserves exact listing links and freshness timestamps, and can verify drive-time constraints.
+A source-linked Los Angeles rental research workspace. Live searches use RentCast, require approved HTTPS listing links and images, and keep retrieval time separate from the provider's last-seen time. Every listing still needs an availability check at its original source.
 
-## Production search
+When live search is unavailable, the interface explicitly labels the research snapshot. A missing Google Routes key permits only the documented Santa Monica neighborhood estimates; their upper bound must meet the requested cutoff. Other commute destinations require Routes. Estimates are labeled without a live-traffic claim.
 
-The Netlify `POST /api/search` function:
+## Develop and verify
 
-- queries active long-term rentals from RentCast;
-- enforces parsed budget, bedroom, amenity, location, warehouse-style, and regional requirements;
-- rejects records without an exact HTTP(S) listing link or authentic listing image;
-- deduplicates repeated records;
-- keeps retrieval time separate from the provider's last-seen time;
-- uses Google Routes for traffic-aware commute constraints;
-- excludes every commute-constrained candidate that cannot be successfully routed;
-- fails explicitly instead of presenting demo results as live data; and
-- rate-limits callers to protect provider quotas and cost.
+Use the Node version in `.nvmrc` (22.23.2) and npm 10.9.8:
 
-The browser clearly labels the static research snapshot whenever live search is unavailable.
-
-## Required Netlify environment variables
-
-Configure secrets in Netlify, never in this repository:
-
-- `RENTCAST_API_KEY` — required for live rental inventory.
-- `GOOGLE_ROUTES_API_KEY` — required only for commute-constrained searches. Enable the Google Routes API and restrict the key to server-side use and that API.
-
-Redeploy after adding or rotating either value.
-
-## Local verification
-
-Use Node.js 22.13 or later:
-
-```bash
+```sh
 npm ci
-npm test
-npm run lint
+npm run verify
+npx --no-install netlify dev --offline --no-open
 ```
 
-Pull requests run the same production build, regression tests, and lint checks in GitHub Actions.
+`verify` builds and exports the actual Netlify artifact, runs regression tests and lint, checks for configured secrets in public output, and packages the functions. GitHub Actions performs it on Linux and macOS. No GNU `timeout` or personal shell symlink is required.
 
-## Netlify configuration
+## Production
 
-Netlify uses:
+- Build command: `npm run verify`; publish directory: `dist/client`.
+- Native functions: `netlify/functions`; routes: `/api/search` and `/api/health`.
+- Production-only `RENTCAST_API_KEY` is required for live searches. Optional `GOOGLE_ROUTES_API_KEY` enables traffic-aware route estimates. No credentials belong in Git or browser storage.
+- Set `LIVE_SEARCH_ENABLED=false` and redeploy to pause paid provider calls.
+- `/release.json` identifies the client build; `/api/health` identifies the function build and actual Node runtime. Both must show the deployed commit.
 
-- build command: `npm run build:netlify`
-- publish directory: `dist/client`
-- function directory: `netlify/functions`
+Use protected pull requests to update `main`. See [the release and security runbook](docs/SECURITY_AND_RELEASE.md) for configuration, verification, rollback, and limitations.
 
-The provider keys remain server-side in the Netlify function.
+## Workspace privacy and scope
 
-## Current scope and known limits
+Search criteria, saved/rejected/compared IDs, and bounded listing records persist in this browser. State expires after 30 days without use, and is removed on the next visit. “Clear saved workspace” removes app-managed storage. Shared-device users and same-origin scripts can access it; there is no cross-device sync or account vault.
 
-- Live structured inventory currently comes from RentCast only.
-- Craigslist, Facebook Marketplace, sublease communities, and local property-manager feeds require separate compliant connectors.
-- Saved live listings persist for the current browser session; a durable cross-session shortlist is not yet implemented.
-- Comparison and inquiry buttons remain labeled preview interactions and do not send messages or submit forms.
-- Provider activity is not a guarantee of availability. Live results remain marked as needing confirmation on the original listing page.
+Saving and comparison toggles are research aids. They do not contact a landlord or submit an inquiry. Approved external images are loaded directly and can disclose the viewer's IP to their hosts; the browser sends no referring page URL.

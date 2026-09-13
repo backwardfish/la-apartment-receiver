@@ -1,10 +1,17 @@
 [build]
-  command = "npm run build:netlify"
+  command = "npm run verify"
   publish = "dist/client"
 
 [build.environment]
-  NODE_VERSION = "22"
+  NODE_VERSION = "22.23.2"
+  NPM_VERSION = "10.9.8"
+  NETLIFY_NEXT_PLUGIN_SKIP = "true"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+[dev]
+  framework = "#static"
+  publish = "dist/client"
+  port = 8888

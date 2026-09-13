@@ -1,47 +1,70 @@
-import { buildLiveSearchRequest, type LiveSearchRequest, type LiveSearchResponse } from "../../app/live-search.ts";
-import { isSantaMonicaCommute } from "../../app/commute-estimates.ts";
-import { searchRentCast } from "../../app/providers.ts";
-
-type Config = {
-  path: string;
-  method: ["POST"];
-  rateLimit: { windowLimit: number; windowSize: number; aggregateBy: ["ip", "domain"] };
-};
+import type { Config, Context } from '@netlify/functions';
+import { buildLiveSearchRequest, type LiveSearchRequest, type LiveSearchResponse } from '../../app/live-search.ts';
+import { isSantaMonicaCommute } from '../../app/commute-estimates.ts';
+import { searchRentCast, ProviderError } from '../../app/providers.ts';
+import { release } from '../../app/release.ts';
 
 declare const Netlify: { env: { get(key: string): string | undefined } };
-const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" };
-function response(body: LiveSearchResponse, status = 200) { return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS }); }
-function unavailable(code: string, message: string): LiveSearchResponse { return { status: code === "search_not_configured" ? "unconfigured" : "unavailable", code, message }; }
-function hasLiveSearchRequest(value: unknown): value is LiveSearchRequest { return !!value && typeof value === "object" && "query" in value && typeof (value as { query?: unknown }).query === "string"; }
 
-export default async (request: Request) => {
-  if (request.method !== "POST") return response(unavailable("method_not_allowed", "Use POST to run a live apartment search."), 405);
-  const contentLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(contentLength) && contentLength > 20_000) return response(unavailable("payload_too_large", "The apartment search request is too large."), 413);
-  if (!request.headers.get("content-type")?.toLowerCase().includes("application/json")) return response(unavailable("unsupported_media_type", "Send the apartment search as JSON."), 415);
-  const payload: unknown = await request.json().catch(() => null);
-  if (!hasLiveSearchRequest(payload)) return response(unavailable("invalid_request", "A non-empty apartment search is required."), 400);
+function response(body: LiveSearchResponse, status: number, requestId: string) {
+  return new Response(JSON.stringify(body), { status, headers: {
+    'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff', 'x-request-id': requestId,
+    'x-receiver-release': release.revision, ...(status === 405 ? { allow: 'POST' } : {}),
+  } });
+}
 
+export async function boundedJson(request: Request): Promise<unknown> {
+  const maxBytes = 20_000;
+  if (Number(request.headers.get('content-length')) > maxBytes) throw new RangeError('payload_too_large');
+  const reader = request.body?.getReader();
+  if (!reader) return null;
+  let bytes = 0;
+  let body = '';
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) { await reader.cancel(); throw new RangeError('payload_too_large'); }
+      body += decoder.decode(value, { stream: true });
+    }
+    return JSON.parse(body + decoder.decode());
+  } finally { reader.releaseLock(); }
+}
+
+const search = async (request: Request, context: Context) => {
+  const requestId = context?.requestId || crypto.randomUUID();
+  const unavailable = (code: string, message: string, status: number) => response({ status: code === 'search_not_configured' ? 'unconfigured' : 'unavailable', code, message }, status, requestId);
+  if (request.method !== 'POST') return unavailable('method_not_allowed', 'Use POST to run a live apartment search.', 405);
+  if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') return unavailable('unsupported_media_type', 'Send the apartment search as JSON.', 415);
+  let payload: unknown;
+  try { payload = await boundedJson(request); }
+  catch (error) { return error instanceof RangeError ? unavailable('payload_too_large', 'The apartment search request is too large.', 413) : unavailable('invalid_request', 'Send a valid apartment search.', 400); }
+  if (!payload || typeof payload !== 'object' || !('query' in payload) || typeof payload.query !== 'string') return unavailable('invalid_request', 'A non-empty apartment search is required.', 400);
   let normalized: LiveSearchRequest;
   try { normalized = buildLiveSearchRequest(payload.query); }
-  catch (error) { return response(unavailable("invalid_request", error instanceof Error ? error.message : "A non-empty apartment search is required."), 400); }
-
-  const rentCastApiKey = Netlify.env.get("RENTCAST_API_KEY");
-  const googleRoutesApiKey = Netlify.env.get("GOOGLE_ROUTES_API_KEY");
-  const commuteCanUseEstimate = !!normalized.intent.commute && isSantaMonicaCommute(normalized.intent.commute.origin);
-  if (!rentCastApiKey || (normalized.intent.commute && !googleRoutesApiKey && !commuteCanUseEstimate)) {
-    const missing = [!rentCastApiKey ? "RENTCAST_API_KEY" : null, normalized.intent.commute && !googleRoutesApiKey && !commuteCanUseEstimate ? "GOOGLE_ROUTES_API_KEY" : null].filter(Boolean).join(" and ");
-    return response(unavailable("search_not_configured", `Live search needs ${missing} configured in Netlify. Receiver is showing its source-backed research snapshot instead.`), 503);
-  }
-
+  catch { return unavailable('invalid_request', 'Enter an apartment search between 1 and 500 characters.', 400); }
+  if (Netlify.env.get('LIVE_SEARCH_ENABLED') === 'false') return unavailable('search_paused', 'Live search is paused. The research snapshot is available below.', 503);
+  const rentCastApiKey = Netlify.env.get('RENTCAST_API_KEY');
+  const googleRoutesApiKey = Netlify.env.get('GOOGLE_ROUTES_API_KEY');
+  const usingEstimate = !!normalized.intent.commute && !googleRoutesApiKey && isSantaMonicaCommute(normalized.intent.commute.origin);
+  if (!rentCastApiKey) return unavailable('search_not_configured', 'Live search is not configured. The research snapshot is available below.', 503);
+  if (normalized.intent.commute && !googleRoutesApiKey && !usingEstimate) return unavailable('commute_unavailable', 'Commute estimates currently cover Santa Monica only. Try another search without a commute limit.', 503);
   try {
     const results = await searchRentCast(normalized, { rentCastApiKey, googleRoutesApiKey });
-    const usingEstimate = !!normalized.intent.commute && !googleRoutesApiKey && commuteCanUseEstimate;
-    return response({ status: "ok", query: normalized.query, searchedAt: new Date().toISOString(), results, provider: usingEstimate ? "RentCast + neighborhood commute estimates" : normalized.intent.commute ? "RentCast + Google Routes" : "RentCast" });
+    return response({ status: 'ok', query: normalized.query, searchedAt: new Date().toISOString(), results, provider: usingEstimate ? 'RentCast + neighborhood commute estimates' : normalized.intent.commute ? 'RentCast + Google Routes' : 'RentCast' }, 200, requestId);
   } catch (error) {
-    console.error("Live apartment search failed", error);
-    return response(unavailable("search_provider_error", "The live-search provider could not return a usable result. Please try again shortly."), 502);
+    // Provider errors can contain credentials, URLs, or search inputs. Log only fixed categories.
+    console.error(JSON.stringify({ event: 'live_search_failed', requestId, code: error instanceof ProviderError ? error.code : 'provider_failure' }));
+    const message = error instanceof ProviderError && error.code === 'source_evidence_unavailable'
+      ? 'The provider returned listings without usable source links or photos. Live results are unavailable; the research snapshot is shown separately.'
+      : 'The live-search provider is unavailable. Please try again shortly.';
+    return unavailable('search_provider_error', message, 502);
   }
 };
+export default search;
 
-export const config: Config = { path: "/api/search", method: ["POST"], rateLimit: { windowLimit: 15, windowSize: 60, aggregateBy: ["ip", "domain"] } };
+// Platform enforcement is distributed; do not substitute an in-memory counter.
+export const config: Config = { path: '/api/search', rateLimit: { windowLimit: 15, windowSize: 60, aggregateBy: ['ip', 'domain'] } };

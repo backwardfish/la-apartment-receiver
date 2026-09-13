@@ -1,0 +1,4 @@
+{
+  "sources": ["appfolio.com", "zillow.com", "apartments.com", "realtor.com", "redfin.com", "hotpads.com", "trulia.com", "zumper.com", "rent.com"],
+  "images": ["images.cdn.appfolio.com", "zillowstatic.com", "images1.apartments.com", "images.rent.com", "ap.rdcpix.com", "photos.zumper.com", "ssl.cdn-redfin.com"]
+}
