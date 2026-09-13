@@ -1,4 +1,5 @@
 import type { LiveListing, LiveSearchRequest, ListingFreshness } from "./live-search.ts";
+import { estimateCommuteToSantaMonica, estimatePassesLimit, isSantaMonicaCommute } from "./commute-estimates.ts";
 
 const RENTCAST_URL = "https://api.rentcast.io/v1/listings/rental/long-term";
 const GOOGLE_ROUTES_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
@@ -26,8 +27,6 @@ function warehouseSignals(record: UnknownRecord) {
     .filter(([, pattern]) => (pattern as RegExp).test(haystack)).map(([label]) => label as string);
 }
 
-// Stable UX taxonomy. Provider-specific wording is evidence; these canonical
-// labels are what filtering, scoring, and presentation consume.
 function features(record: UnknownRecord) {
   const haystack = listingHaystack(record);
   const detected = [
@@ -74,11 +73,20 @@ export async function searchRentCast(request: LiveSearchRequest, config: Provide
     .sort((a, b) => { const relevance = (item: typeof a) => { const listing = item.listing; const haystack = `${listing.title} ${listing.neighborhood} ${listing.city} ${listing.features.join(" ")} ${listing.warehouseSignals.join(" ")}`.toLowerCase(); return request.intent.searchTerms.filter((term) => haystack.includes(term)).length + regionalPreference(item, request.intent.preferredRegions) * 2; }; return relevance(b) - relevance(a); });
 
   const needsCommute = request.intent.commute; if (!needsCommute || candidates.length === 0) return candidates.map(({ listing }) => listing);
-  if (!config.googleRoutesApiKey) throw new Error("Google Routes is not configured for a commute-constrained search");
+
+  if (!config.googleRoutesApiKey && isSantaMonicaCommute(needsCommute.origin)) {
+    return candidates.flatMap(({ listing }) => {
+      const estimate = estimateCommuteToSantaMonica(listing.neighborhood, listing.city);
+      if (!estimate || !estimatePassesLimit(estimate, needsCommute.maxMinutes)) return [];
+      return [{ ...listing, commute: { origin: needsCommute.origin, minutes: estimate.maxMinutes, verifiedAt: now.toISOString(), estimated: true, range: [estimate.minMinutes, estimate.maxMinutes] as [number, number] } }];
+    });
+  }
+
+  if (!config.googleRoutesApiKey) throw new Error("Google Routes is not configured for this commute-constrained search");
   const routable = candidates.filter((item) => item.coordinate).slice(0, 49); if (routable.length === 0) return [];
   const routesResponse = await fetcher(GOOGLE_ROUTES_URL, { method: "POST", headers: { "content-type": "application/json", "X-Goog-Api-Key": config.googleRoutesApiKey, "X-Goog-FieldMask": "originIndex,destinationIndex,status,condition,duration" }, signal: AbortSignal.timeout(12_000), body: JSON.stringify({ origins: routable.map((item) => ({ waypoint: { location: { latLng: item.coordinate } } })), destinations: [{ waypoint: { address: `${needsCommute.origin}, CA` } }], travelMode: "DRIVE", routingPreference: "TRAFFIC_AWARE", departureTime: now.toISOString(), languageCode: "en-US", regionCode: "US" }) });
   if (!routesResponse.ok) throw new Error(`Google Routes returned ${routesResponse.status}`);
   const routes: unknown = await routesResponse.json(); if (!Array.isArray(routes)) throw new Error("Google Routes returned an invalid route matrix");
   const commuteByCandidate = new Map<number, number>(); for (const value of routes) { if (!value || typeof value !== "object") continue; const route = value as UnknownRecord; const originIndex = number(route.originIndex); const minutes = durationMinutes(route.duration); if (route.condition !== "ROUTE_EXISTS" || originIndex === undefined || minutes === undefined) continue; const candidate = routable[originIndex]; if (candidate) commuteByCandidate.set(candidate.index, minutes); }
-  return routable.flatMap(({ listing, index }) => { const minutes = commuteByCandidate.get(index); if (minutes === undefined || minutes > needsCommute.maxMinutes) return []; return [{ ...listing, commute: { origin: needsCommute.origin, minutes, verifiedAt: now.toISOString() } }]; });
+  return routable.flatMap(({ listing, index }) => { const minutes = commuteByCandidate.get(index); if (minutes === undefined || minutes > needsCommute.maxMinutes) return []; return [{ ...listing, commute: { origin: needsCommute.origin, minutes, verifiedAt: now.toISOString(), estimated: false } }]; });
 }
