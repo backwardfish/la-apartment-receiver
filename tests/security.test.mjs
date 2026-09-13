@@ -14,6 +14,19 @@ const record={id:'1',addressLine1:'1 Test Street',city:'Los Angeles',neighborhoo
 const req=(body,headers={})=>new Request('https://receiver.test/api/search',{method:'POST',headers:{'content-type':'application/json',...headers},body:typeof body==='string'?body:JSON.stringify(body)});
 const context={requestId:'test-request'};
 
+test('only explicit enablement can reach credentials or reserve paid work', async t => {
+  let reservations=0;
+  const guarded=createSearchHandler(async()=>{reservations++;});
+  t.mock.method(console,'info',()=>{});
+  for(const value of [undefined,'','false','TRUE','true ','1']) {
+    globalThis.Netlify={env:{get:key=>{assert.equal(key,'LIVE_SEARCH_ENABLED');return value;}}};
+    const result=await guarded(req({query:'one bedroom'}),context);
+    assert.equal(result.status,503);
+    assert.equal((await result.json()).code,'search_paused');
+  }
+  assert.equal(reservations,0);
+});
+
 test('uses RentCast multi-value syntax and keeps upstream HTTP diagnostics safe',async()=>{
  const query=buildLiveSearchRequest('one bedroom under $2800');
  assert.equal(buildRentCastUrl(query).searchParams.get('propertyType'),'Apartment|Condo|Multi-Family|Townhouse');
@@ -50,11 +63,11 @@ test('fails safely for absent credentials, paused searches, and unsupported comm
  const missing=await handler(req({query:'loft'}),context);assert.equal(missing.status,503);assert.doesNotMatch(await missing.text(),/RENTCAST_API_KEY/);
  globalThis.Netlify={env:{get:key=>key==='LIVE_SEARCH_ENABLED'?'false':'test'}};
  assert.equal((await (await handler(req({query:'loft'}),context)).json()).code,'search_paused');
- globalThis.Netlify={env:{get:key=>key==='RENTCAST_API_KEY'?'test':undefined}};
+ globalThis.Netlify={env:{get:key=>key==='LIVE_SEARCH_ENABLED'?'true':key==='RENTCAST_API_KEY'?'test':undefined}};
  assert.equal((await handler(req({query:'loft within 30 minutes of Pasadena'}),context)).status,503);
 });
 test('logs only fixed categories and does not echo secret-bearing errors',async(t)=>{
- globalThis.Netlify={env:{get:key=>key==='RENTCAST_API_KEY'?'test':undefined}};
+ globalThis.Netlify={env:{get:key=>key==='LIVE_SEARCH_ENABLED'?'true':key==='RENTCAST_API_KEY'?'test':undefined}};
  const logs=[];t.mock.method(console,'error',line=>logs.push(line));t.mock.method(globalThis,'fetch',async()=>{throw Error('sensitive-key https://private.test/?token=abc');});
  const providerHandler=createSearchHandler(async()=>{});
  const response=await providerHandler(req({query:'loft'}),context);assert.equal(response.status,502);

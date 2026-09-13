@@ -15,6 +15,30 @@ export class ProviderError extends Error {
   code: string;
   constructor(code: string, message: string) { super(message); this.name = "ProviderError"; this.code = code; }
 }
+async function providerJson(response: Response, provider: 'rentcast' | 'routes', maxBytes: number): Promise<unknown> {
+  const oversized = () => new ProviderError(`${provider}_response_too_large`, 'Provider response exceeded its size limit');
+  if (Number(response.headers.get('content-length')) > maxBytes) {
+    await response.body?.cancel();
+    throw oversized();
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new ProviderError(`${provider}_invalid_payload`, 'Provider returned no JSON body');
+  let bytes = 0, body = '';
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) { await reader.cancel(); throw oversized(); }
+      body += decoder.decode(value, { stream: true });
+    }
+    return JSON.parse(body + decoder.decode());
+  } catch (error) {
+    if (error instanceof ProviderError) throw error;
+    throw new ProviderError(`${provider}_invalid_payload`, 'Provider returned invalid or incomplete JSON');
+  } finally { reader.releaseLock(); }
+}
 function nestedText(value: unknown, key: string) { return value && typeof value === "object" ? text((value as UnknownRecord)[key]) : undefined; }
 function dateValue(value: unknown) { const valueText = text(value); if (!valueText || Number.isNaN(Date.parse(valueText))) return undefined; return new Date(valueText); }
 function freshness(lastSeen: Date | undefined, now: Date): ListingFreshness { if (!lastSeen) return "needs-verification"; if (lastSeen.getTime() > now.getTime() + 300_000) return "needs-verification"; const ageDays = (now.getTime() - lastSeen.getTime()) / 86_400_000; if (ageDays <= 1) return "live"; if (ageDays <= 7) return "recent"; if (ageDays <= 30) return "needs-verification"; return "stale"; }
@@ -75,7 +99,7 @@ function regionalPreference(item: { coordinate: { latitude: number; longitude: n
 export async function searchRentCast(request: LiveSearchRequest, config: ProviderConfig, fetcher: typeof fetch = fetch, now = new Date()): Promise<LiveListing[]> {
   const rentCastResponse = await fetcher(buildRentCastUrl(request), { headers: { "X-Api-Key": config.rentCastApiKey, accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(12_000) });
   if (!rentCastResponse.ok) throw new ProviderError(`rentcast_http_${rentCastResponse.status}`, `RentCast returned ${rentCastResponse.status}`);
-  const payload: unknown = await rentCastResponse.json(); if (!Array.isArray(payload)) throw new Error("RentCast returned an invalid listing payload");
+  const payload = await providerJson(rentCastResponse, 'rentcast', 2_000_000); if (!Array.isArray(payload)) throw new ProviderError('rentcast_invalid_payload', 'RentCast returned an invalid listing payload');
   if (payload.length && !payload.some(item => normalizeRentCastListing(item, now))) throw new ProviderError("source_evidence_unavailable", "Provider records lack required source evidence");
   const seen = new Set<string>();
   const candidates = payload.slice(0, 50).map((item, index) => ({ index, listing: normalizeRentCastListing(item, now), coordinate: coordinate(item) }))
@@ -99,7 +123,7 @@ export async function searchRentCast(request: LiveSearchRequest, config: Provide
   const routable = candidates.filter((item) => item.coordinate).slice(0, 49); if (routable.length === 0) return [];
   const routesResponse = await fetcher(GOOGLE_ROUTES_URL, { method: "POST", headers: { "content-type": "application/json", "X-Goog-Api-Key": config.googleRoutesApiKey, "X-Goog-FieldMask": "originIndex,destinationIndex,status,condition,duration" }, redirect: "error", signal: AbortSignal.timeout(12_000), body: JSON.stringify({ origins: routable.map((item) => ({ waypoint: { location: { latLng: item.coordinate } } })), destinations: [{ waypoint: { address: `${needsCommute.origin}, CA` } }], travelMode: "DRIVE", routingPreference: "TRAFFIC_AWARE", departureTime: now.toISOString(), languageCode: "en-US", regionCode: "US" }) });
   if (!routesResponse.ok) throw new ProviderError(`routes_http_${routesResponse.status}`, `Google Routes returned ${routesResponse.status}`);
-  const routes: unknown = await routesResponse.json(); if (!Array.isArray(routes)) throw new Error("Google Routes returned an invalid route matrix");
+  const routes = await providerJson(routesResponse, 'routes', 100_000); if (!Array.isArray(routes)) throw new ProviderError('routes_invalid_payload', 'Google Routes returned an invalid route matrix');
   const commuteByCandidate = new Map<number, number>(); for (const value of routes) { if (!value || typeof value !== "object") continue; const route = value as UnknownRecord; const originIndex = number(route.originIndex); const minutes = durationMinutes(route.duration); if (route.condition !== "ROUTE_EXISTS" || (route.status && typeof route.status === "object" && Number((route.status as UnknownRecord).code ?? 0) !== 0) || originIndex === undefined || !Number.isInteger(originIndex) || minutes === undefined || minutes <= 0 || !Number.isFinite(minutes)) continue; const candidate = routable[originIndex]; if (candidate) commuteByCandidate.set(candidate.index, minutes); }
   return routable.flatMap(({ listing, index }) => { const minutes = commuteByCandidate.get(index); if (minutes === undefined || minutes > needsCommute.maxMinutes) return []; return [{ ...listing, commute: { origin: needsCommute.origin, minutes, verifiedAt: now.toISOString(), estimated: false } }]; });
 }

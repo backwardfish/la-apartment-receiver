@@ -49,7 +49,10 @@ export const createSearchHandler = (reserve = reserveNetlifySearch) => async (re
   let normalized: LiveSearchRequest;
   try { normalized = buildLiveSearchRequest(payload.query); }
   catch { return unavailable('invalid_request', 'Enter an apartment search between 1 and 500 characters.', 400); }
-  if (Netlify.env.get('LIVE_SEARCH_ENABLED') === 'false') return unavailable('search_paused', 'Live search is paused. The research snapshot is available below.', 503);
+  if (Netlify.env.get('LIVE_SEARCH_ENABLED') !== 'true') {
+    console.info(JSON.stringify({ event: 'search_paused', requestId }));
+    return unavailable('search_paused', 'Live search is paused. The research snapshot is available below.', 503);
+  }
   const rentCastApiKey = Netlify.env.get('RENTCAST_API_KEY');
   const googleRoutesApiKey = Netlify.env.get('GOOGLE_ROUTES_API_KEY');
   const usingEstimate = !!normalized.intent.commute && !googleRoutesApiKey && isSantaMonicaCommute(normalized.intent.commute.origin);

@@ -7,13 +7,15 @@ export type PersistedListing = {
   features: string[]; status: 'verified' | 'needs-verification' | 'stale';
   capturedAt?: string; lastSeenAt?: string; fit: number;
   why: string[]; unknowns: string[]; redFlags: string[];
+  warehouseSignals?: string[];
 };
 export type Workspace = {
   saved: string[]; rejected: string[]; compare: string[]; activeQuery: string;
   liveListings: PersistedListing[] | null;
+  retainedListings?: PersistedListing[];
 };
-export const STORAGE_KEY = 'receiver:workspace:v3';
-const LEGACY_KEY = 'receiver:workspace:v2';
+export const STORAGE_KEY = 'receiver:workspace:v4';
+const LEGACY_KEYS = ['receiver:workspace:v3', 'receiver:workspace:v2'];
 const MAX_BYTES = 500_000;
 const RETENTION_MS = 30 * 86_400_000;
 function text(value: unknown): value is string { return typeof value === 'string' && value.length <= 2048; }
@@ -25,7 +27,7 @@ export function sanitizePersistedListings(value: unknown): PersistedListing[] | 
   if (!Array.isArray(value)) return null;
   const result: PersistedListing[] = [];
   const ids = new Set<string>();
-  for (const item of value.slice(0, 100)) {
+  for (const item of value.slice(0, 103)) {
     if (!item || typeof item !== 'object') continue;
     const l = item as Record<string, unknown>;
     if (![l.id,l.title,l.neighborhood,l.city,l.available,l.source].every(text) || !finite(l.rent) || !finite(l.beds) || !finite(l.baths) || !finite(l.fit) || !stringArray(l.features) || !stringArray(l.why) || !stringArray(l.unknowns) || !stringArray(l.redFlags)) continue;
@@ -38,9 +40,15 @@ export function sanitizePersistedListings(value: unknown): PersistedListing[] | 
     const capturedAt=timestamp(l.capturedAt),lastSeenAt=timestamp(l.lastSeenAt);
     if(capturedAt)clean.capturedAt=capturedAt;
     if(lastSeenAt)clean.lastSeenAt=lastSeenAt;
+    if(stringArray(l.warehouseSignals))clean.warehouseSignals=l.warehouseSignals;
     result.push(clean);
   }
   return result;
+}
+/** Keep the evidence for selected listings independently of the current search. */
+export function retainWorkspaceListings(previous: PersistedListing[], current: PersistedListing[], ids: string[]): PersistedListing[] {
+  const byId = new Map([...previous, ...current].map(listing => [listing.id, listing]));
+  return sanitizePersistedListings([...new Set(ids)].slice(0, 103).flatMap(id => byId.has(id) ? [byId.get(id)] : [])) ?? [];
 }
 export function validWorkspaceIds(value: unknown, allowed: Set<string>, limit = 100): string[] {
   return Array.isArray(value) ? [...new Set(value.filter((id):id is string=>typeof id==='string'&&allowed.has(id)))].slice(0,limit) : [];
@@ -50,27 +58,32 @@ export function storageAvailable(): boolean {
   try { const s=storage(); if(!s)return false;s.setItem('receiver:probe','1');s.removeItem('receiver:probe');return true; } catch { return false; }
 }
 export function clearWorkspace(): boolean {
-  try { const s=storage(); if(!s)return false;s.removeItem(STORAGE_KEY);s.removeItem(LEGACY_KEY);return true; } catch { return false; }
+  try { const s=storage(); if(!s)return false;for(const key of [STORAGE_KEY,...LEGACY_KEYS])s.removeItem(key);return true; } catch { return false; }
 }
 export function restoreWorkspace(snapshots: PersistedListing[], now=Date.now()): Workspace | null {
   try {
-    const s=storage();const raw=s?.getItem(STORAGE_KEY)??s?.getItem(LEGACY_KEY);
+    const s=storage();const raw=[STORAGE_KEY,...LEGACY_KEYS].map(key=>s?.getItem(key)).find(Boolean);
     if(!raw)return null;
     if(new TextEncoder().encode(raw).length>MAX_BYTES){clearWorkspace();return null;}
     const value=JSON.parse(raw);
-    if(!value||![2,3].includes(value.version))return null;
-    if(value.version===3&&(!finite(value.savedAt)||value.savedAt>now+300000||now-value.savedAt>RETENTION_MS)){clearWorkspace();return null;}
+    if(!value||![2,3,4].includes(value.version))return null;
+    if(value.version>=3&&(!finite(value.savedAt)||value.savedAt>now+300000||now-value.savedAt>RETENTION_MS)){clearWorkspace();return null;}
     const liveListings=sanitizePersistedListings(value.liveListings);
-    if(liveListings)for(const listing of liveListings)if(listing.capturedAt&&now-Date.parse(listing.capturedAt)>7*86400000)listing.status='stale';
-    const allowed=new Set((liveListings??snapshots).map(l=>l.id));
-    return {liveListings,saved:validWorkspaceIds(value.saved,allowed),rejected:validWorkspaceIds(value.rejected,allowed),compare:validWorkspaceIds(value.compare,allowed,3),activeQuery:typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):''};
+    const retainedListings=sanitizePersistedListings(value.retainedListings)??[];
+    for(const listing of [...(liveListings??[]),...retainedListings])if(listing.capturedAt&&now-Date.parse(listing.capturedAt)>7*86400000)listing.status='stale';
+    const allowed=new Set([...snapshots,...(liveListings??[]),...retainedListings].map(l=>l.id));
+    const saved=validWorkspaceIds(value.saved,allowed),compare=validWorkspaceIds(value.compare,allowed,3);
+    const retained=retainWorkspaceListings(retainedListings,[...snapshots,...(liveListings??[])],[...saved,...compare]);
+    return {liveListings,retainedListings:retained,saved,rejected:validWorkspaceIds(value.rejected,allowed),compare,activeQuery:typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):''};
   } catch { clearWorkspace();return null; }
 }
 export function persistWorkspace(workspace: Workspace, now=Date.now()): boolean {
   try {
     const liveListings=sanitizePersistedListings(workspace.liveListings);
-    const clean={version:3,savedAt:now,saved:workspace.saved.slice(0,100),rejected:workspace.rejected.slice(0,100),compare:workspace.compare.slice(0,3),activeQuery:workspace.activeQuery.slice(0,500),liveListings};
+    const saved=workspace.saved.slice(0,100),compare=workspace.compare.slice(0,3);
+    const retainedListings=retainWorkspaceListings(workspace.retainedListings??[],liveListings??[],[...saved,...compare]);
+    const clean={version:4,savedAt:now,saved,rejected:workspace.rejected.slice(0,100),compare,activeQuery:workspace.activeQuery.slice(0,500),liveListings,retainedListings};
     const raw=JSON.stringify(clean);if(new TextEncoder().encode(raw).length>MAX_BYTES)return false;
-    const s=storage();if(!s)return false;s.setItem(STORAGE_KEY,raw);s.removeItem(LEGACY_KEY);return true;
+    const s=storage();if(!s)return false;s.setItem(STORAGE_KEY,raw);for(const key of LEGACY_KEYS)s.removeItem(key);return true;
   } catch { return false; }
 }
