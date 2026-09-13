@@ -14,7 +14,7 @@ npm run verify
 npx --no-install netlify dev --offline --no-open
 ```
 
-`verify` builds and exports the actual Netlify artifact, runs regression tests and lint, checks for configured secrets in public output, and packages the functions. GitHub Actions performs it on Linux and macOS. No GNU `timeout` or personal shell symlink is required.
+`verify` builds and exports the actual Netlify artifact, runs regression tests, lint, and TypeScript checks, checks for configured secrets in public output, and packages the functions. GitHub Actions performs it on Linux and macOS and audits the locked dependencies. No GNU `timeout` or personal shell symlink is required. Restart Netlify Dev after rebuilding so its script-policy headers match the new HTML.
 
 ## Production
 
@@ -22,7 +22,9 @@ npx --no-install netlify dev --offline --no-open
 - Native functions: `netlify/functions`; routes: `/api/search` and `/api/health`.
 - Production-only `RENTCAST_API_KEY` is required for live searches. Optional `GOOGLE_ROUTES_API_KEY` enables traffic-aware route estimates. No credentials belong in Git or browser storage.
 - Set `LIVE_SEARCH_ENABLED=false` and redeploy to pause paid provider calls.
+- Shared live-search limits default to 25 per UTC day and 50 per UTC month. The allowance persists across deployments in Netlify Blobs. Invalid settings or unavailable storage block provider calls; failed searches retain their reservation. Optional overrides and provider-call bounds are documented in the runbook.
 - `/release.json` identifies the client build; `/api/health` identifies the function build and actual Node runtime. Both must show the deployed commit.
+- `/api/health?readiness=1` checks allowance-store connectivity without using a search slot or contacting providers. Automatic pull-request previews are disabled to protect shared storage; manually deploy only reviewed preview code.
 
 Use protected pull requests to update `main`. See [the release and security runbook](docs/SECURITY_AND_RELEASE.md) for configuration, verification, rollback, and limitations.
 

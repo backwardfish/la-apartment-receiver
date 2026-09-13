@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { trustedUrl } from '../app/security-urls.ts';
-import handler from '../netlify/functions/search.ts';
+import handler, { createSearchHandler } from '../netlify/functions/search.ts';
 import { runBounded, duration } from '../scripts/run-bounded.mjs';
 import { normalizeRentCastListing, searchRentCast, buildRentCastUrl } from '../app/providers.ts';
 import { buildLiveSearchRequest, requestLiveSearch } from '../app/live-search.ts';
@@ -56,7 +56,8 @@ test('fails safely for absent credentials, paused searches, and unsupported comm
 test('logs only fixed categories and does not echo secret-bearing errors',async(t)=>{
  globalThis.Netlify={env:{get:key=>key==='RENTCAST_API_KEY'?'test':undefined}};
  const logs=[];t.mock.method(console,'error',line=>logs.push(line));t.mock.method(globalThis,'fetch',async()=>{throw Error('sensitive-key https://private.test/?token=abc');});
- const response=await handler(req({query:'loft'}),context);assert.equal(response.status,502);
+ const providerHandler=createSearchHandler(async()=>{});
+ const response=await providerHandler(req({query:'loft'}),context);assert.equal(response.status,502);
  assert.match(response.headers.get('x-receiver-release'),/^[a-f0-9]{40}$/);
  assert.doesNotMatch(JSON.stringify(logs)+await response.text(),/sensitive-key|private.test|token=abc|RENTCAST/);
 });
