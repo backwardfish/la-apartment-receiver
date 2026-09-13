@@ -31,8 +31,16 @@ test("does not discard valid listings for an unsupported descriptive preference"
 });
 
 test("filters a bare neighborhood suggestion as a location", () => {
-  const results = tailorListings(fixtures, parseSearchIntent("West Hollywood under $2,800"));
+  const intent = parseSearchIntent("West Hollywood under $2,800");
+  assert.equal(intent.locationQuery, "west hollywood");
+  const results = tailorListings(fixtures, intent);
   assert.deepEqual(results.map((listing) => listing.neighborhood), ["West Hollywood"]);
+});
+
+test("recognizes a bare neighborhood followed by an amenity", () => {
+  const intent = parseSearchIntent("Santa Monica with laundry");
+  assert.equal(intent.locationQuery, "santa monica");
+  assert.deepEqual(intent.requiredFeatures, ["Laundry"]);
 });
 
 test("tailors results using hard requirements and descriptive terms", () => {
@@ -56,4 +64,14 @@ test("describes parsed constraints for the active-search summary", () => {
   assert.match(summary, /up to \$2,500/);
   assert.match(summary, /2\+ bedroom/);
   assert.match(summary, /parking/);
+});
+
+test("parses warehouse style and a one-hour Santa Monica commute constraint", () => {
+  const intent = parseSearchIntent("warehouse-style apartments south or east of LA within an hour's drive of Santa Monica");
+  assert.equal(intent.warehouseStyle, true);
+  assert.deepEqual(intent.preferredRegions, ["south", "east"]);
+  assert.deepEqual(intent.commute, { origin: "santa monica", maxMinutes: 60 });
+  assert.deepEqual(intent.searchTerms, []);
+  assert.match(describeSearchIntent(intent), /warehouse-style/);
+  assert.match(describeSearchIntent(intent), /within 60 min drive of santa monica/);
 });
