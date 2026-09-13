@@ -15,6 +15,8 @@
 
 `dist/server` is a build-time rendering input, not the publish directory. Public artifact checks cover `dist/client`. Keep `.env`, `.netlify`, runtime caches, and generated release files out of Git.
 
+HTML post-processing is disabled so generated inline scripts retain their CSP hashes. Restart Netlify Dev after rebuilding: a running local server can retain an older `_headers` configuration while serving the new HTML. Verify all inline hashes against the headers of the deployed response, not only the files on disk.
+
 ## Secrets and provider controls
 
 - `RENTCAST_API_KEY`: search function only. `GOOGLE_ROUTES_API_KEY`: optional route matrix calls only. The legacy `OPENAI_HOUSEHUNTER` value has no consumer in this application; remove it after confirming no external integration depends on it.

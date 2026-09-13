@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { trustedUrl } from '../app/security-urls.ts';
 import handler from '../netlify/functions/search.ts';
 import { runBounded, duration } from '../scripts/run-bounded.mjs';
@@ -11,6 +13,17 @@ const listing={id:'rentcast:1',title:'Loft',neighborhood:'Silver Lake',city:'Los
 const record={id:'1',addressLine1:'1 Test Street',city:'Los Angeles',neighborhood:'Silver Lake',price:2500,bedrooms:1,bathrooms:1,listingUrl:listing.sourceUrl,imageUrl:listing.image,description:'Loft with parking',lastSeenDate:'2026-09-12T10:00:00Z'};
 const req=(body,headers={})=>new Request('https://receiver.test/api/search',{method:'POST',headers:{'content-type':'application/json',...headers},body:typeof body==='string'?body:JSON.stringify(body)});
 const context={requestId:'test-request'};
+
+test('exported security headers permit exactly the generated inline scripts',async()=>{
+ const html=await readFile(new URL('../dist/client/index.html',import.meta.url),'utf8');
+ const headers=await readFile(new URL('../dist/client/_headers',import.meta.url),'utf8');
+ const directive=headers.match(/script-src ([^;]+);/)?.[1];
+ assert.ok(directive);assert.doesNotMatch(directive,/unsafe-inline|unsafe-eval/);
+ const scripts=[...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].filter(([,attrs,body])=>! /\bsrc=/.test(attrs)&&body.trim());
+ assert.ok(scripts.length>0);
+ for(const [,,body] of scripts)assert.ok(directive.includes(`'sha256-${createHash('sha256').update(body).digest('base64')}'`));
+ assert.equal(new Set(directive.match(/'sha256-[^']+'/g)).size,new Set(scripts.map(([, ,body])=>createHash('sha256').update(body).digest('base64'))).size);
+});
 
 test('rejects unsafe, deceptive, credential-bearing, and unapproved URLs',()=>{
  for(const url of ['javascript:alert(1)','data:image/svg+xml,<svg/>','http://lapmg.appfolio.com/listing','https://user:pass@lapmg.appfolio.com/listing','https://lapmg.appfolio.com.evil.test/listing','https://127.0.0.1/listing','https://169.254.169.254/latest/meta-data','https://lapmg.appfolio.com:8080/listing','https://lapmg.appfolio.com/\\evil.test','https://evil.test/listing']) assert.equal(trustedUrl(url,'sources'),undefined,url);
