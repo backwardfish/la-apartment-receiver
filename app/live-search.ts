@@ -24,6 +24,8 @@ export type LiveListing = {
     origin: string;
     minutes: number;
     verifiedAt: string;
+    estimated?: boolean;
+    range?: [number, number];
   };
 };
 
