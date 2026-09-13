@@ -83,7 +83,7 @@ test('the overall storage deadline rejects even if a transport stalls', async ()
 });
 
 test('budget rejection and outage prevent provider calls and return safe, distinct errors', async t => {
-  globalThis.Netlify = { env: { get: key => key === 'RENTCAST_API_KEY' ? 'test' : undefined } };
+  globalThis.Netlify = { env: { get: key => key === 'LIVE_SEARCH_ENABLED' ? 'true' : key === 'RENTCAST_API_KEY' ? 'test' : undefined } };
   let providerCalls = 0;
   t.mock.method(globalThis, 'fetch', async () => { providerCalls++; throw Error('provider should not run'); });
   t.mock.method(console, 'error', () => {});
@@ -115,7 +115,7 @@ test('paused, invalid and unconfigured requests do not consume the shared allowa
 test('failed provider calls still consume a reservation', async t => {
   const connect = sharedStore();
   const handler = createSearchHandler(() => reserveSearch(connect(), { daily: 1, monthly: 1 }, now));
-  globalThis.Netlify = { env: { get: key => key === 'RENTCAST_API_KEY' ? 'test' : undefined } };
+  globalThis.Netlify = { env: { get: key => key === 'LIVE_SEARCH_ENABLED' ? 'true' : key === 'RENTCAST_API_KEY' ? 'test' : undefined } };
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async () => { calls++; return new Response('private provider error', { status: 503 }); });
   t.mock.method(console, 'error', () => {});

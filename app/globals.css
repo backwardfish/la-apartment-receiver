@@ -123,3 +123,20 @@ h1 em { color: var(--green); font-style: italic; }
 .workspace-privacy{margin:24px 0;color:#5a6268;font-size:13px;display:flex;gap:16px;align-items:center;justify-content:space-between}.workspace-privacy button{background:white;border:1px solid #ccd2d5;border-radius:8px;padding:9px 12px;white-space:nowrap}
 
 .search-notice { margin: 0 0 24px; padding: 14px 16px; border: 1px solid #d8c99d; border-radius: 12px; background: #fff8e9; color: #5b4c2d; font-size: 14px; line-height: 1.5; }
+
+.comparison { max-width: 100%; min-width: 0; }
+.comparison > p { color: #53645a; font-size: 13px; line-height: 1.5; }
+.comparison-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--cream); }
+.comparison table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+.comparison th, .comparison td { min-width: 170px; max-width: 320px; padding: 16px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; line-height: 1.5; }
+.comparison th:first-child { min-width: 135px; }
+.comparison button, .comparison a { color: var(--green); background: transparent; border: 0; padding: 0; text-align: left; font: inherit; text-decoration: underline; }
+.main-panel { min-width: 0; }
+button:disabled { cursor: wait; opacity: .65; }
+:focus-visible { outline: 3px solid #28654f; outline-offset: 3px; }
+@media (max-width: 760px) {
+  .side-nav { display: flex; flex-wrap: wrap; gap: 4px; }
+  .side-link { min-height: 44px; padding: 8px 10px; width: auto; }
+  .workspace-privacy { flex-direction: column; align-items: flex-start; }
+  .action-button { min-height: 40px; font-size: 12px; }
+}

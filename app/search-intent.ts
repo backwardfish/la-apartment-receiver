@@ -118,15 +118,19 @@ function normalizedWords(value: string) {
 
 export function parseSearchIntent(raw: string): SearchIntent {
   const normalized = ` ${raw.trim().toLowerCase()} `;
+  const commute = parseCommute(normalized);
+  // A commute destination is not the requested neighborhood. Keep the search
+  // broad enough to include both sides of the commute cutoff.
+  const locationInput = commute ? normalized.replace(/\b(?:within|under|less than|up to|no more than)\s+(?:(?:an?|one)\s+hour'?s?|[\d]+\s*(?:minutes?|mins?|hours?|hrs?))\s*(?:drive|driving)?\s*(?:of|from|to)\s+[a-z][a-z\s'-]*?(?=[,.;!?]|$)/, ' ') : normalized;
   const rentMatch = normalized.match(
     /(?:under|up to|max(?:imum)?(?: of)?)\s*\$?\s*([\d,]{3,})|\$\s*([\d,]{3,})\s*(?:max|maximum|or less|and under)?/,
   );
   const rentValue = rentMatch?.[1] ?? rentMatch?.[2];
   const bedroomMatch = normalized.match(/\b(\d+)\s*(?:\+|plus)?\s*(?:bed(?:room)?s?|br)\b/);
   const wordBedroomMatch = normalized.match(/\b(one|two|three|four|five)\s*(?:-|\s)*(?:bed(?:room)?s?|br)\b/);
-  const locationMatch = normalized.match(/\b(?:in|near|around)\s+([a-z][a-z\s'-]*?)(?=\s+(?:under|up to|max(?:imum)?|with|and|for)\b|[,.;!?]|$)/);
+  const locationMatch = locationInput.match(/\b(?:in|near|around)\s+([a-z][a-z\s'-]*?)(?=\s+(?:under|up to|max(?:imum)?|with|and|for)\b|[,.;!?]|$)/);
   const explicitLocation = locationMatch?.[1]?.trim().replace(/\s+/g, " ");
-  const locationHaystack = (" " + normalized.replace(/[^a-z0-9-]+/g, " ") + " ").replace(/\s+/g, " ");
+  const locationHaystack = (" " + locationInput.replace(/[^a-z0-9-]+/g, " ") + " ").replace(/\s+/g, " ");
   const knownLocation = Object.entries(LOCATION_ALIASES)
     .sort(([a], [b]) => b.length - a.length)
     .find(([, aliases]) => aliases.some((alias) => locationHaystack.includes(" " + alias + " ")))?.[0];
@@ -135,9 +139,8 @@ export function parseSearchIntent(raw: string): SearchIntent {
     new RegExp(`\\b${region}(?:ern)?(?:\s+la)?\\b`).test(normalized),
   );
   const warehouseStyle = WAREHOUSE_STYLE_ALIASES.some((alias) => normalized.includes(alias));
-  const commute = parseCommute(normalized);
   const requiredFeatures = Object.entries(FEATURE_ALIASES)
-    .filter(([, aliases]) => aliases.some((alias) => normalized.includes(alias)))
+    .filter(([feature, aliases]) => aliases.some((alias) => normalized.includes(alias)) && !(feature === 'Furnished' && /\bunfurnished\b|\bnot furnished\b/.test(normalized)))
     .map(([feature]) => feature);
 
   const featureWords = new Set(
@@ -197,7 +200,7 @@ export function tailorListings<T extends IntentListing>(listings: T[], intent: S
   const rawSearch = intent.raw.toLowerCase().replace(/[^a-z0-9]+/g, " ");
   const inferredLocation = [...new Set(listings.flatMap((listing) => [listing.neighborhood, listing.city]))]
     .map((location) => location.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim())
-    .filter((location) => location.length > 2 && rawSearch.includes(location))
+    .filter((location) => location.length > 2 && rawSearch.includes(location) && location !== intent.commute?.origin)
     .sort((a, b) => b.length - a.length)[0];
   const requestedLocation = intent.locationQuery?.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() ?? inferredLocation;
 

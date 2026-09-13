@@ -5,6 +5,26 @@ import { buildRentCastUrl, normalizeRentCastListing, searchRentCast } from "../a
 
 const sample = { id:"la-1", addressLine1:"101 Industrial Street", formattedAddress:"101 Industrial Street, Los Angeles, CA 90013", city:"Los Angeles", neighborhood:"Arts District", state:"CA", zipCode:"90013", latitude:34.0407, longitude:-118.2351, price:2700, bedrooms:1, bathrooms:1, squareFootage:850, status:"Active", lastSeenDate:"2026-08-24T12:00:00.000Z", listingUrl:"https://lapmg.appfolio.com/listings/detail/test", description:"Industrial loft with parking, in-unit washer and exposed brick", imageUrl:"https://images.cdn.appfolio.com/la-1.jpg" };
 
+test('provider JSON has a streamed byte bound even without a trustworthy Content-Length', async () => {
+  const request=buildLiveSearchRequest('one bedroom');
+  for (const headers of [{},{'content-length':'1'},{'content-length':'2000001'}]) {
+    await assert.rejects(searchRentCast(request,{rentCastApiKey:'synthetic'},async()=>new Response('x'.repeat(2000001),{headers})),error=>error.code==='rentcast_response_too_large');
+  }
+  await assert.rejects(searchRentCast(request,{rentCastApiKey:'synthetic'},async()=>new Response('{private-body')),error=>error.code==='rentcast_invalid_payload'&&!error.message.includes('private-body'));
+});
+
+test('a commute-only search queries the LA region and excludes unknown neighborhoods', async () => {
+  const request=buildLiveSearchRequest('one bedroom within 45 minutes of Santa Monica');
+  assert.equal(buildRentCastUrl(request).searchParams.get('city'),null);
+  assert.ok(buildRentCastUrl(request).searchParams.has('latitude'));
+  const results=await searchRentCast(request,{rentCastApiKey:'synthetic'},async()=>Response.json([
+    {...sample,id:'pass',neighborhood:'Silver Lake'},
+    {...sample,id:'fail',addressLine1:'202 Test Street',neighborhood:'Arts District'},
+    {...sample,id:'unknown',addressLine1:'303 Test Street',neighborhood:'Unmapped Area',city:'Unknown City'},
+  ]));
+  assert.deepEqual(results.map(x=>x.id),['rentcast:pass']);
+});
+
 test("normalizes a RentCast record into the Receiver contract", () => { const listing=normalizeRentCastListing(sample,new Date("2026-08-25T12:00:00.000Z")); assert.ok(listing); assert.equal(listing.id,"rentcast:la-1"); assert.equal(listing.rent,2700); assert.equal(listing.sourceUrl,"https://lapmg.appfolio.com/listings/detail/test"); assert.deepEqual(listing.warehouseSignals,["Loft","Industrial conversion"]); assert.deepEqual(listing.features,["Parking","Laundry"]); assert.equal(listing.freshness,"live"); });
 test("normalizes pet-friendly and furnished provider language into canonical UX features", () => { const listing=normalizeRentCastListing({...sample,id:"la-pet",description:"Fully furnished loft. Cats allowed and dogs allowed. Assigned garage space."}); assert.ok(listing); assert.ok(listing.features.includes("Pet friendly")); assert.ok(listing.features.includes("Furnished")); assert.ok(listing.features.includes("Parking")); });
 test("rejects provider records without authentic listing imagery",()=>assert.equal(normalizeRentCastListing({...sample,imageUrl:undefined,photos:undefined}),null));

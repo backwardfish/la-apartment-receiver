@@ -74,4 +74,16 @@ test("parses warehouse style and a one-hour Santa Monica commute constraint", ()
   assert.deepEqual(intent.searchTerms, []);
   assert.match(describeSearchIntent(intent), /warehouse-style/);
   assert.match(describeSearchIntent(intent), /within 60 min drive of santa monica/);
+  assert.equal(intent.locationQuery, undefined);
+});
+
+test('commute destinations do not narrow inventory to that city', () => {
+  assert.equal(parseSearchIntent('one bedroom within 45 minutes of Santa Monica').locationQuery, undefined);
+  assert.equal(parseSearchIntent('loft in Silver Lake within 45 minutes of Santa Monica').locationQuery, 'silver lake');
+  assert.equal(parseSearchIntent('loft in Santa Monica within 45 minutes of Pasadena').locationQuery, 'santa monica');
+});
+
+test('unfurnished searches do not accidentally require furnished listings', () => {
+  assert.ok(!parseSearchIntent('an unfurnished apartment with parking').requiredFeatures.includes('Furnished'));
+  assert.ok(parseSearchIntent('a furnished apartment with parking').requiredFeatures.includes('Furnished'));
 });
