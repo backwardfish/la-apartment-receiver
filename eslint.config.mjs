@@ -11,8 +11,16 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    ".sites-runtime/**",
+    ".netlify/**",
+    ".wrangler/**",
     "next-env.d.ts",
   ]),
+  {
+    files: ["app/receiver-page.tsx"],
+    // Netlify serves a static client; remote images are deliberately not proxied.
+    rules: { "@next/next/no-img-element": "off" },
+  },
 ]);
 
 export default eslintConfig;

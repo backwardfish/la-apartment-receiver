@@ -5,7 +5,7 @@ import { sanitizePersistedListings, validWorkspaceIds } from "../app/workspace-s
 const listing = {
   id: "rentcast:live-1", title: "Live loft", neighborhood: "Arts District", city: "Los Angeles",
   rent: 2800, beds: 1, baths: 1, available: "Listed as active", source: "Provider",
-  sourceUrl: "https://example.com/listing", image: "https://example.com/image.jpg",
+  sourceUrl: "https://lapmg.appfolio.com/listings/detail/test", image: "https://images.cdn.appfolio.com/image.jpg",
   features: ["Parking", "Pet friendly"], status: "needs-verification", fit: 88,
   why: ["Source backed"], unknowns: ["Confirm availability"], redFlags: [],
 };

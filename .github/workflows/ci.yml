@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - "agent/**"
+      - "codex/**"
 
 permissions:
   contents: read
@@ -16,19 +17,31 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Use Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "22.13.0"
+          node-version-file: .nvmrc
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Run production build and regression tests
-        run: npm test
-      - name: Run lint
-        run: npm run lint
+      - name: Verify production artifact, tests, lint, and functions
+        run: npm run verify
+
+  release-gate:
+    if: always()
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both platforms to pass
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+        run: test "$TEST_RESULT" = success
