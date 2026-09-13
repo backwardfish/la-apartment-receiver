@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { trustedUrl } from '../app/security-urls.ts';
 import handler from '../netlify/functions/search.ts';
 import { runBounded, duration } from '../scripts/run-bounded.mjs';
-import { normalizeRentCastListing, searchRentCast } from '../app/providers.ts';
+import { normalizeRentCastListing, searchRentCast, buildRentCastUrl } from '../app/providers.ts';
 import { buildLiveSearchRequest, requestLiveSearch } from '../app/live-search.ts';
 import { sanitizePersistedListings, restoreWorkspace, persistWorkspace, clearWorkspace, STORAGE_KEY } from '../app/workspace-state.ts';
 
@@ -13,6 +13,12 @@ const listing={id:'rentcast:1',title:'Loft',neighborhood:'Silver Lake',city:'Los
 const record={id:'1',addressLine1:'1 Test Street',city:'Los Angeles',neighborhood:'Silver Lake',price:2500,bedrooms:1,bathrooms:1,listingUrl:listing.sourceUrl,imageUrl:listing.image,description:'Loft with parking',lastSeenDate:'2026-09-12T10:00:00Z'};
 const req=(body,headers={})=>new Request('https://receiver.test/api/search',{method:'POST',headers:{'content-type':'application/json',...headers},body:typeof body==='string'?body:JSON.stringify(body)});
 const context={requestId:'test-request'};
+
+test('uses RentCast multi-value syntax and keeps upstream HTTP diagnostics safe',async()=>{
+ const query=buildLiveSearchRequest('one bedroom under $2800');
+ assert.equal(buildRentCastUrl(query).searchParams.get('propertyType'),'Apartment|Condo|Multi-Family|Townhouse');
+ for(const status of [400,401,403,429,503])await assert.rejects(searchRentCast(query,{rentCastApiKey:'test'},async()=>new Response('sensitive provider body',{status})),error=>error.code===`rentcast_http_${status}`&&!error.message.includes('sensitive'));
+});
 
 test('exported security headers permit exactly the generated inline scripts',async()=>{
  const html=await readFile(new URL('../dist/client/index.html',import.meta.url),'utf8');

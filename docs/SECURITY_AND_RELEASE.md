@@ -21,6 +21,7 @@ HTML post-processing is disabled so generated inline scripts retain their CSP ha
 
 - `RENTCAST_API_KEY`: search function only. `GOOGLE_ROUTES_API_KEY`: optional route matrix calls only. The legacy `OPENAI_HOUSEHUNTER` value has no consumer in this application; remove it after confirming no external integration depends on it.
 - The site's current Netlify plan rejects Functions-only environment scope. Production-only values isolate previews and development, but remain visible to production builds. `check-public-artifact.mjs` stops publication if a configured provider credential appears in public output. This is a compensating control, not equivalent to Functions-only scope.
+- Netlify Secrets Controller returns masked values through management APIs outside its hosted runtime. Do not use those placeholders for provider probes or overwrite a stored production value with them. Test credentials through the deployed function; hosted build scanning checks the real values.
 - Never print values, embed keys in frontend environment variables, or copy signed deployment URLs into commands or tickets. Use authenticated CLI or Git deployment. For exposure, invalidate the capability or underlying credential first, then clean shared copies and review deploy/access records.
 - `LIVE_SEARCH_ENABLED=false` stops provider calls before fetching. Redeploy after changing it or provider credentials. Restore live search only after a bounded provider smoke test succeeds.
 - The platform limits searches to 15 per 60 seconds per IP/domain. Bodies are capped at 20,000 actual bytes, queries at 500 characters, RentCast results at 50, and route-matrix origins at 49. Each provider request has a 12-second deadline and refuses redirects.
@@ -36,7 +37,7 @@ Commute estimates use the upper bound: 40–45 minutes qualifies for a 45-minute
 
 Local storage uses a bounded versioned schema, discards unknown fields, downgrades stored verification claims, and expires on a later visit after 30 inactive days. It contains no credential fields; users should avoid entering sensitive personal data into free-text searches. Browser storage is not encrypted account storage. Only app-managed workspace keys are removed by the clear button.
 
-Logs contain fixed error categories and a request ID. Do not add request bodies, raw provider errors, authorization headers, signed URLs, or full listing payloads. Public errors carry safe messages and a correlation ID.
+Logs contain fixed error categories (including provider HTTP status) and a request ID. Do not add request bodies, raw provider errors, authorization headers, signed URLs, or full listing payloads. Public errors carry safe messages and a correlation ID.
 
 ## Release procedure
 
