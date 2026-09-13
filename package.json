@@ -33,7 +33,7 @@
     "@cloudflare/workers-types": "5.20260911.1",
     "@netlify/functions": "6.0.0",
     "@netlify/zip-it-and-ship-it": "15.5.1",
-    "@tailwindcss/postcss": "4.2.1",
+    "@tailwindcss/postcss": "4.3.3",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
