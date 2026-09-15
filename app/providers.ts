@@ -6,8 +6,79 @@ const RENTCAST_URL = "https://api.rentcast.io/v1/listings/rental/long-term";
 const GOOGLE_ROUTES_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
 const LA_CENTER = { latitude: 34.0522, longitude: -118.2437 };
 const SEARCHABLE_CITIES = new Set(["beverly hills", "burbank", "culver city", "glendale", "long beach", "los angeles", "pasadena", "santa monica", "torrance", "west hollywood"]);
+/** One provider request returns at most this many records (RentCast maximum); the byte cap still applies. */
+export const MAX_PROVIDER_RECORDS = 500;
+/** Widest circle a multi-area search may request; wider briefs fall back to the metro query. */
+const MAX_CLUSTER_RADIUS_MILES = 12;
+type Coordinate = { latitude: number; longitude: number };
+export type AreaCenter = Coordinate & { radiusMiles: number; label: string };
+/**
+ * Approximate centres and radii (straight-line miles) for areas the intent
+ * parser recognises. They bound the provider query and the post-filter; they
+ * are not authoritative neighbourhood boundaries. Cities with their own
+ * provider query are also listed so mixed briefs can be served in one call.
+ */
+export const AREA_CENTERS: Record<string, AreaCenter> = {
+  "arts district": { latitude: 34.0405, longitude: -118.2325, radiusMiles: 1.0, label: "Arts District" },
+  "downtown los angeles": { latitude: 34.0450, longitude: -118.2500, radiusMiles: 1.6, label: "Downtown LA" },
+  "little tokyo": { latitude: 34.0500, longitude: -118.2400, radiusMiles: 0.6, label: "Little Tokyo" },
+  "fashion district": { latitude: 34.0350, longitude: -118.2530, radiusMiles: 0.8, label: "Fashion District" },
+  "historic core": { latitude: 34.0470, longitude: -118.2490, radiusMiles: 0.6, label: "Historic Core" },
+  chinatown: { latitude: 34.0625, longitude: -118.2380, radiusMiles: 0.7, label: "Chinatown" },
+  "boyle heights": { latitude: 34.0340, longitude: -118.2050, radiusMiles: 1.3, label: "Boyle Heights" },
+  usc: { latitude: 34.0224, longitude: -118.2851, radiusMiles: 1.5, label: "USC" },
+  "west adams": { latitude: 34.0330, longitude: -118.3220, radiusMiles: 1.2, label: "West Adams" },
+  ucla: { latitude: 34.0689, longitude: -118.4452, radiusMiles: 1.5, label: "UCLA" },
+  westwood: { latitude: 34.0561, longitude: -118.4320, radiusMiles: 1.4, label: "Westwood" },
+  brentwood: { latitude: 34.0520, longitude: -118.4732, radiusMiles: 1.8, label: "Brentwood" },
+  "echo park": { latitude: 34.0782, longitude: -118.2606, radiusMiles: 1.1, label: "Echo Park" },
+  "silver lake": { latitude: 34.0869, longitude: -118.2702, radiusMiles: 1.2, label: "Silver Lake" },
+  "los feliz": { latitude: 34.1064, longitude: -118.2900, radiusMiles: 1.2, label: "Los Feliz" },
+  koreatown: { latitude: 34.0577, longitude: -118.3009, radiusMiles: 1.2, label: "Koreatown" },
+  hollywood: { latitude: 34.0928, longitude: -118.3287, radiusMiles: 1.8, label: "Hollywood" },
+  "highland park": { latitude: 34.1116, longitude: -118.1923, radiusMiles: 1.4, label: "Highland Park" },
+  "eagle rock": { latitude: 34.1392, longitude: -118.2110, radiusMiles: 1.4, label: "Eagle Rock" },
+  "mar vista": { latitude: 34.0027, longitude: -118.4316, radiusMiles: 1.2, label: "Mar Vista" },
+  venice: { latitude: 33.9850, longitude: -118.4695, radiusMiles: 1.4, label: "Venice" },
+  "playa vista": { latitude: 33.9750, longitude: -118.4180, radiusMiles: 1.1, label: "Playa Vista" },
+  "marina del rey": { latitude: 33.9803, longitude: -118.4517, radiusMiles: 1.1, label: "Marina del Rey" },
+  inglewood: { latitude: 33.9617, longitude: -118.3531, radiusMiles: 2.4, label: "Inglewood" },
+  "santa monica": { latitude: 34.0195, longitude: -118.4912, radiusMiles: 2.4, label: "Santa Monica" },
+  "culver city": { latitude: 34.0211, longitude: -118.3965, radiusMiles: 1.8, label: "Culver City" },
+  "west hollywood": { latitude: 34.0900, longitude: -118.3617, radiusMiles: 1.6, label: "West Hollywood" },
+  "beverly hills": { latitude: 34.0736, longitude: -118.4004, radiusMiles: 1.8, label: "Beverly Hills" },
+  pasadena: { latitude: 34.1478, longitude: -118.1445, radiusMiles: 3.0, label: "Pasadena" },
+  glendale: { latitude: 34.1425, longitude: -118.2551, radiusMiles: 3.0, label: "Glendale" },
+  burbank: { latitude: 34.1808, longitude: -118.3090, radiusMiles: 3.0, label: "Burbank" },
+  torrance: { latitude: 33.8358, longitude: -118.3406, radiusMiles: 3.0, label: "Torrance" },
+  "long beach": { latitude: 33.7701, longitude: -118.1937, radiusMiles: 4.0, label: "Long Beach" },
+};
 type UnknownRecord = Record<string, unknown>;
 export type ProviderConfig = { rentCastApiKey: string; googleRoutesApiKey?: string };
+
+export function distanceMiles(a: Coordinate, b: Coordinate) {
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const dLat = toRadians(b.latitude - a.latitude), dLon = toRadians(b.longitude - a.longitude);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(a.latitude)) * Math.cos(toRadians(b.latitude)) * Math.sin(dLon / 2) ** 2;
+  return 3958.8 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+/** Requested areas with known coordinates, in the order the brief named them. */
+export function requestedAreas(intent: LiveSearchRequest["intent"]): AreaCenter[] {
+  return intent.locations.flatMap(key => AREA_CENTERS[key] ? [AREA_CENTERS[key]] : []);
+}
+/** Smallest practical circle covering every requested area, or null when the brief is too spread out for one bounded query. */
+export function enclosingCircle(areas: AreaCenter[]): (Coordinate & { radiusMiles: number }) | null {
+  if (areas.length === 0) return null;
+  const center = { latitude: areas.reduce((sum, a) => sum + a.latitude, 0) / areas.length, longitude: areas.reduce((sum, a) => sum + a.longitude, 0) / areas.length };
+  const radiusMiles = Math.ceil(Math.max(...areas.map(a => distanceMiles(center, a) + a.radiusMiles)) * 10) / 10;
+  return radiusMiles > MAX_CLUSTER_RADIUS_MILES ? null : { ...center, radiusMiles };
+}
+/** The nearest requested area whose radius contains the coordinate, if any. */
+export function nearestArea(coordinate: Coordinate | null, areas: AreaCenter[]) {
+  if (!coordinate || areas.length === 0) return null;
+  const ranked = areas.map(area => ({ area, miles: distanceMiles(coordinate, area) })).sort((a, b) => a.miles - b.miles);
+  return ranked[0].miles <= ranked[0].area.radiusMiles ? ranked[0] : null;
+}
 
 function text(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : undefined; }
 function number(value: unknown) { return typeof value === "number" && Number.isFinite(value) ? value : undefined; }
@@ -50,7 +121,10 @@ function listingHaystack(record: UnknownRecord) {
 }
 
 function warehouseSignals(record: UnknownRecord) {
-  const haystack = listingHaystack(record);
+  // Style evidence must come from the listing's own description, type, or
+  // feature list. A street name such as "Industrial St" is not evidence.
+  const values = Array.isArray(record.features) ? record.features : [];
+  const haystack = [record.propertyType, record.description, ...values].filter((value): value is string => typeof value === "string").join(" ").toLowerCase();
   return [["Loft", /\bloft\b/], ["Industrial conversion", /\bindustrial|warehouse|factory conversion|converted factory\b/], ["Live\/work", /\blive[ /-]?work\b/]]
     .filter(([, pattern]) => (pattern as RegExp).test(haystack)).map(([label]) => label as string);
 }
@@ -91,7 +165,20 @@ export function normalizeRentCastListing(value: unknown, now = new Date()): Live
 }
 
 function titleCase(value: string) { return value.replace(/\b\w/g, (letter) => letter.toUpperCase()); }
-export function buildRentCastUrl(request: LiveSearchRequest) { const url = new URL(RENTCAST_URL); const { intent } = request; if (intent.locationQuery && SEARCHABLE_CITIES.has(intent.locationQuery)) { url.searchParams.set("city", titleCase(intent.locationQuery)); url.searchParams.set("state", "CA"); } else if (intent.locationQuery) { url.searchParams.set("address", `${titleCase(intent.locationQuery)}, Los Angeles, CA`); url.searchParams.set("radius", "8"); } else { url.searchParams.set("latitude", String(LA_CENTER.latitude)); url.searchParams.set("longitude", String(LA_CENTER.longitude)); url.searchParams.set("radius", "40"); } url.searchParams.set("status", "Active"); url.searchParams.set("propertyType", "Apartment|Condo|Multi-Family|Townhouse"); if (intent.maxRent !== undefined) url.searchParams.set("price", `0:${intent.maxRent}`); if (intent.minBedrooms !== undefined) url.searchParams.set("bedrooms", `${intent.minBedrooms}:`); url.searchParams.set("limit", "50"); return url; }
+/** A brief naming exactly one provider-searchable city uses the provider's own city filter; everything else is a bounded circle. */
+function singleCity(intent: LiveSearchRequest["intent"]) { return intent.locations.length === 1 && SEARCHABLE_CITIES.has(intent.locations[0]) ? intent.locations[0] : undefined; }
+export function buildRentCastUrl(request: LiveSearchRequest) {
+  const url = new URL(RENTCAST_URL); const { intent } = request; const city = singleCity(intent); const circle = city ? null : enclosingCircle(requestedAreas(intent));
+  const setCircle = (center: Coordinate, radiusMiles: number) => { url.searchParams.set("latitude", center.latitude.toFixed(4)); url.searchParams.set("longitude", center.longitude.toFixed(4)); url.searchParams.set("radius", String(radiusMiles)); };
+  if (city) { url.searchParams.set("city", titleCase(city)); url.searchParams.set("state", "CA"); }
+  else if (circle) setCircle(circle, circle.radiusMiles);
+  else if (intent.locationQuery && requestedAreas(intent).length === 0) { url.searchParams.set("address", `${titleCase(intent.locationQuery)}, Los Angeles, CA`); url.searchParams.set("radius", "3"); }
+  else setCircle(LA_CENTER, 40);
+  url.searchParams.set("status", "Active"); url.searchParams.set("propertyType", "Apartment|Condo|Multi-Family|Townhouse");
+  if (intent.maxRent !== undefined) url.searchParams.set("price", `0:${intent.maxRent}`);
+  if (intent.minBedrooms !== undefined) url.searchParams.set("bedrooms", `${intent.minBedrooms}:*`);
+  url.searchParams.set("limit", String(MAX_PROVIDER_RECORDS)); return url;
+}
 function coordinate(listing: unknown) { if (!listing || typeof listing !== "object") return null; const record = listing as UnknownRecord; const latitude = number(record.latitude); const longitude = number(record.longitude); return latitude === undefined || longitude === undefined || Math.abs(latitude) > 90 || Math.abs(longitude) > 180 ? null : { latitude, longitude }; }
 function durationMinutes(value: unknown) { const duration = text(value); const match = duration?.match(/^([\d.]+)s$/); return match ? Math.ceil(Number(match[1]) / 60) : undefined; }
 function regionalPreference(item: { coordinate: { latitude: number; longitude: number } | null }, regions: Array<"south" | "east">) { if (!item.coordinate || regions.length === 0) return 0; const south = item.coordinate.latitude < 34.02; const east = item.coordinate.longitude > -118.20; return Number((regions.includes("south") && south) || (regions.includes("east") && east)); }
@@ -102,18 +189,23 @@ export async function searchRentCast(request: LiveSearchRequest, config: Provide
   const payload = await providerJson(rentCastResponse, 'rentcast', 2_000_000); if (!Array.isArray(payload)) throw new ProviderError('rentcast_invalid_payload', 'RentCast returned an invalid listing payload');
   if (payload.length && !payload.some(item => normalizeRentCastListing(item, now))) throw new ProviderError("source_evidence_unavailable", "Provider records lack required source evidence");
   const seen = new Set<string>();
-  const candidates = payload.slice(0, 50).map((item, index) => ({ index, listing: normalizeRentCastListing(item, now), coordinate: coordinate(item) }))
+  const areas = requestedAreas(request.intent); const geoFilter = areas.length > 0 && !singleCity(request.intent);
+  const candidates = payload.slice(0, MAX_PROVIDER_RECORDS).map((item, index) => ({ index, listing: normalizeRentCastListing(item, now), coordinate: coordinate(item) }))
     .filter((item): item is typeof item & { listing: LiveListing } => item.listing !== null)
     .filter(({ listing }) => (request.intent.maxRent === undefined || listing.rent <= request.intent.maxRent) && (request.intent.minBedrooms === undefined || listing.beds >= request.intent.minBedrooms))
     .filter(({ listing }) => request.intent.requiredFeatures.every((feature) => listing.features.includes(feature)) && (!request.intent.warehouseStyle || listing.warehouseSignals.length > 0))
+    // Location is a hard requirement: a listing must fall inside one of the requested areas. Records without coordinates cannot qualify.
+    .map(item => { const nearest = nearestArea(item.coordinate, areas); return nearest ? { ...item, listing: { ...item.listing, area: nearest.area.label, distanceMiles: Math.round(nearest.miles * 10) / 10 } } : item; })
+    .filter(({ listing }) => !geoFilter || listing.area !== undefined)
     .filter(({ listing }) => { const key = [listing.title, listing.city, listing.rent, listing.beds].join("|").toLowerCase().replace(/\s+/g, " "); if (seen.has(key)) return false; seen.add(key); return true; })
-    .sort((a, b) => { const relevance = (item: typeof a) => { const listing = item.listing; const haystack = `${listing.title} ${listing.neighborhood} ${listing.city} ${listing.features.join(" ")} ${listing.warehouseSignals.join(" ")}`.toLowerCase(); return request.intent.searchTerms.filter((term) => haystack.includes(term)).length + regionalPreference(item, request.intent.preferredRegions) * 2; }; return relevance(b) - relevance(a); });
+    .sort((a, b) => { const relevance = (item: typeof a) => { const listing = item.listing; const haystack = `${listing.title} ${listing.neighborhood} ${listing.city} ${listing.features.join(" ")} ${listing.warehouseSignals.join(" ")}`.toLowerCase(); return request.intent.searchTerms.filter((term) => haystack.includes(term)).length + regionalPreference(item, request.intent.preferredRegions) * 2 + (request.intent.warehouseStyle ? listing.warehouseSignals.length : 0); }; return relevance(b) - relevance(a) || (a.listing.distanceMiles ?? Infinity) - (b.listing.distanceMiles ?? Infinity); });
 
   const needsCommute = request.intent.commute; if (!needsCommute || candidates.length === 0) return candidates.map(({ listing }) => listing);
 
   if (!config.googleRoutesApiKey && isSantaMonicaCommute(needsCommute.origin)) {
     return candidates.flatMap(({ listing }) => {
-      const estimate = estimateCommuteToSantaMonica(listing.neighborhood, listing.city);
+      // RentCast records carry no neighbourhood, so the requested-area match (from coordinates) is the usable key.
+      const estimate = estimateCommuteToSantaMonica(listing.area ?? listing.neighborhood, listing.city);
       if (!estimate || !estimatePassesLimit(estimate, needsCommute.maxMinutes)) return [];
       return [{ ...listing, commute: { origin: needsCommute.origin, minutes: estimate.maxMinutes, verifiedAt: now.toISOString(), estimated: true, range: [estimate.minMinutes, estimate.maxMinutes] as [number, number] } }];
     });

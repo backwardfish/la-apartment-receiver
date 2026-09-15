@@ -8,6 +8,7 @@ export type PersistedListing = {
   capturedAt?: string; lastSeenAt?: string; fit: number;
   why: string[]; unknowns: string[]; redFlags: string[];
   warehouseSignals?: string[];
+  area?: string; distanceMiles?: number;
 };
 export type Workspace = {
   saved: string[]; rejected: string[]; compare: string[]; activeQuery: string;
@@ -41,6 +42,8 @@ export function sanitizePersistedListings(value: unknown): PersistedListing[] | 
     if(capturedAt)clean.capturedAt=capturedAt;
     if(lastSeenAt)clean.lastSeenAt=lastSeenAt;
     if(stringArray(l.warehouseSignals))clean.warehouseSignals=l.warehouseSignals;
+    if(text(l.area)&&l.area.length<=80)clean.area=l.area;
+    if(finite(l.distanceMiles)&&l.distanceMiles<=1000)clean.distanceMiles=l.distanceMiles;
     result.push(clean);
   }
   return result;

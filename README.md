@@ -2,6 +2,10 @@
 
 A source-linked Los Angeles rental research workspace. Live searches use RentCast, require approved HTTPS listing links and images, and keep retrieval time separate from the provider's last-seen time. Every listing still needs an availability check at its original source.
 
+> **Known launch blocker (confirmed 2026-09-15).** RentCast's published rental-listing schema contains no listing URL, photos, description, or neighborhood ([schema](https://developers.rentcast.io/reference/property-listings-schema)). The adapter's evidence gate therefore rejects every real RentCast record (`tests/providers.test.mjs`, "KNOWN BLOCKER"), and loft/warehouse detection has no text to read. Live search cannot return results until a source that supplies listing links, photos, and descriptions is approved, or the evidence contract is deliberately changed. Do not relax the gate to make a search "work".
+
+Searches name areas, not addresses. Recognised areas (Arts District, Downtown LA, USC, UCLA, Westwood, Silver Lake, …) have approximate centre coordinates; a brief may name several as alternatives ("near UCLA, USC, or the Arts District"). One bounded provider request covers them all, and only listings whose coordinates fall inside a requested area are shown, with the straight-line distance in the evidence. A brief that asks for a loft or warehouse only shows listings whose own description carries that evidence; a short honest list is preferred to a padded one.
+
 When live search is unavailable, the interface explicitly labels the research snapshot. A missing Google Routes key permits only the documented Santa Monica neighborhood estimates; their upper bound must meet the requested cutoff. Other commute destinations require Routes. Estimates are labeled without a live-traffic claim.
 
 ## Develop and verify
@@ -15,6 +19,8 @@ npx --no-install netlify dev --offline --no-open
 ```
 
 `verify` builds and exports the actual Netlify artifact, runs regression tests, lint, and TypeScript checks, checks for configured secrets in public output, and packages the functions. GitHub Actions performs it on Linux and macOS and audits the locked dependencies. No GNU `timeout` or personal shell symlink is required. Restart Netlify Dev after rebuilding so its script-policy headers match the new HTML.
+
+Netlify Dev's local Blobs server does not return an ETag on reads, and the allowance fails closed without one, so a local `.env` with `LIVE_SEARCH_ENABLED=true` permits exactly one live search per local store. Delete `.netlify/blobs-serve` to reset it. Hosted Netlify Blobs return ETags; this is a local limitation only.
 
 ## Production
 

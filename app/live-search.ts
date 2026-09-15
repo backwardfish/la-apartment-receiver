@@ -20,6 +20,10 @@ export type LiveListing = {
   capturedAt: string;
   lastSeenAt?: string;
   warehouseSignals: string[];
+  /** Requested area this listing falls inside, when the search named areas with known coordinates. */
+  area?: string;
+  /** Straight-line miles from the centre of `area`. */
+  distanceMiles?: number;
   commute?: {
     origin: string;
     minutes: number;
