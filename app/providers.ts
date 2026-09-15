@@ -1,10 +1,11 @@
 import { trustedUrl } from "./security-urls.ts";
 import type { LiveListing, LiveSearchRequest, ListingFreshness } from "./live-search.ts";
 import { estimateCommuteToSantaMonica, estimatePassesLimit, isSantaMonicaCommute } from "./commute-estimates.ts";
+import { assessStyle, styleText } from "./style.ts";
 
 const RENTCAST_URL = "https://api.rentcast.io/v1/listings/rental/long-term";
 const GOOGLE_ROUTES_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
-const LA_CENTER = { latitude: 34.0522, longitude: -118.2437 };
+export const LA_CENTER = { latitude: 34.0522, longitude: -118.2437 };
 const SEARCHABLE_CITIES = new Set(["beverly hills", "burbank", "culver city", "glendale", "long beach", "los angeles", "pasadena", "santa monica", "torrance", "west hollywood"]);
 /** One provider request returns at most this many records (RentCast maximum); the byte cap still applies. */
 export const MAX_PROVIDER_RECORDS = 500;
@@ -120,17 +121,17 @@ function listingHaystack(record: UnknownRecord) {
     .filter((value): value is string => typeof value === "string").join(" ").toLowerCase();
 }
 
-function warehouseSignals(record: UnknownRecord) {
+function style(record: UnknownRecord) {
   // Style evidence must come from the listing's own description, type, or
   // feature list. A street name such as "Industrial St" is not evidence.
   const values = Array.isArray(record.features) ? record.features : [];
-  const haystack = [record.propertyType, record.description, ...values].filter((value): value is string => typeof value === "string").join(" ").toLowerCase();
-  return [["Loft", /\bloft\b/], ["Industrial conversion", /\bindustrial|warehouse|factory conversion|converted factory\b/], ["Live\/work", /\blive[ /-]?work\b/]]
-    .filter(([, pattern]) => (pattern as RegExp).test(haystack)).map(([label]) => label as string);
+  return assessStyle(styleText([record.propertyType, record.description, ...values]), number(record.yearBuilt));
 }
 
-function features(record: UnknownRecord) {
-  const haystack = listingHaystack(record);
+function features(record: UnknownRecord) { return detectFeatures(listingHaystack(record)); }
+/** Canonical amenity labels from provider text; negations win over mentions. */
+export function detectFeatures(haystack: string) {
+  haystack = haystack.toLowerCase();
   const detected = [
     ["Parking", /parking|garage|carport|assigned space/],
     ["Laundry", /laundry|washer|dryer|w\/d/],
@@ -161,7 +162,7 @@ export function normalizeRentCastListing(value: unknown, now = new Date()): Live
   if (!id || !address || !city || rent === undefined || rent <= 0 || !listingUrl || number(record.bedrooms) === undefined || number(record.bathrooms) === undefined || Number(record.bedrooms) < 0 || Number(record.bathrooms) < 0) return null;
   const lastSeen = dateValue(record.lastSeenDate); const freshnessDate = lastSeen;
   const image = trustedUrl(record.imageUrl, "images") ?? (Array.isArray(record.photos) ? record.photos.map(value => trustedUrl(value, "images")).find(Boolean) : undefined); if (!image) return null;
-  return { id: `rentcast:${id}`, title: text(record.addressLine1) ?? address, neighborhood: text(record.neighborhood) ?? city, city, rent, beds: number(record.bedrooms) ?? 0, baths: number(record.bathrooms) ?? 1, sqft: number(record.squareFootage), available: text(record.status) === "Active" ? "Listed as active" : text(record.status), source: nestedText(record.listingOffice, "name") ?? "RentCast feed", sourceUrl: listingUrl, image, features: features(record), freshness: freshness(freshnessDate, now), capturedAt: now.toISOString(), lastSeenAt: lastSeen?.toISOString(), warehouseSignals: warehouseSignals(record) };
+  return { id: `rentcast:${id}`, title: text(record.addressLine1) ?? address, neighborhood: text(record.neighborhood) ?? city, city, rent, beds: number(record.bedrooms) ?? 0, baths: number(record.bathrooms) ?? 1, sqft: number(record.squareFootage), available: text(record.status) === "Active" ? "Listed as active" : text(record.status), source: nestedText(record.listingOffice, "name") ?? "RentCast feed", sourceUrl: listingUrl, image, features: features(record), freshness: freshness(freshnessDate, now), capturedAt: now.toISOString(), lastSeenAt: lastSeen?.toISOString(), yearBuilt: number(record.yearBuilt), ...styleFields(style(record)) };
 }
 
 function titleCase(value: string) { return value.replace(/\b\w/g, (letter) => letter.toUpperCase()); }
@@ -183,22 +184,39 @@ function coordinate(listing: unknown) { if (!listing || typeof listing !== "obje
 function durationMinutes(value: unknown) { const duration = text(value); const match = duration?.match(/^([\d.]+)s$/); return match ? Math.ceil(Number(match[1]) / 60) : undefined; }
 function regionalPreference(item: { coordinate: { latitude: number; longitude: number } | null }, regions: Array<"south" | "east">) { if (!item.coordinate || regions.length === 0) return 0; const south = item.coordinate.latitude < 34.02; const east = item.coordinate.longitude > -118.20; return Number((regions.includes("south") && south) || (regions.includes("east") && east)); }
 
+export function styleFields(evidence: ReturnType<typeof assessStyle>): Pick<LiveListing, "warehouseSignals" | "styleGrade" | "cautions"> {
+  return { warehouseSignals: evidence.signals, styleGrade: evidence.grade, cautions: evidence.cautions };
+}
+export type Candidate = { index: number; listing: LiveListing | null; coordinate: Coordinate | null };
+const GRADE_WEIGHT = { A: 6, B: 4, C: 1, D: 0 } as const;
+/**
+ * Shared post-processing for every provider: hard requirements (rent, beds,
+ * features, loft evidence when asked for, requested areas), de-duplication,
+ * and ranking. Ranking prefers stronger loft evidence for loft briefs, then
+ * free-text term matches and regional hints, then distance to the area.
+ */
+export function rankCandidates(input: Candidate[], request: LiveSearchRequest): Array<Candidate & { listing: LiveListing }> {
+  const seen = new Set<string>();
+  const areas = requestedAreas(request.intent); const geoFilter = areas.length > 0 && !singleCity(request.intent);
+  return input
+    .filter((item): item is Candidate & { listing: LiveListing } => item.listing !== null)
+    .filter(({ listing }) => (request.intent.maxRent === undefined || listing.rent <= request.intent.maxRent) && (request.intent.minBedrooms === undefined || listing.beds >= request.intent.minBedrooms))
+    .filter(({ listing }) => request.intent.requiredFeatures.every((feature) => listing.features.includes(feature)))
+    // A loft brief excludes records with no loft evidence at all; weak evidence (grade C) stays but ranks last.
+    .filter(({ listing }) => !request.intent.warehouseStyle || (listing.warehouseSignals.length > 0 && listing.styleGrade !== "D"))
+    // Location is a hard requirement: a listing must fall inside one of the requested areas. Records without coordinates cannot qualify.
+    .map(item => { const nearest = nearestArea(item.coordinate, areas); return nearest ? { ...item, listing: { ...item.listing, area: nearest.area.label, distanceMiles: Math.round(nearest.miles * 10) / 10 } } : item; })
+    .filter(({ listing }) => !geoFilter || listing.area !== undefined)
+    .filter(({ listing }) => { const key = [listing.title, listing.city, listing.rent, listing.beds].join("|").toLowerCase().replace(/\s+/g, " "); if (seen.has(key)) return false; seen.add(key); return true; })
+    .sort((a, b) => { const relevance = (item: typeof a) => { const listing = item.listing; const haystack = `${listing.title} ${listing.neighborhood} ${listing.city} ${listing.features.join(" ")} ${listing.warehouseSignals.join(" ")}`.toLowerCase(); return request.intent.searchTerms.filter((term) => haystack.includes(term)).length + regionalPreference(item, request.intent.preferredRegions) * 2 + (request.intent.warehouseStyle ? GRADE_WEIGHT[listing.styleGrade ?? "D"] : 0) - (listing.cautions?.some(c => c.startsWith("Short-term")) ? 3 : 0); }; return relevance(b) - relevance(a) || (a.listing.distanceMiles ?? Infinity) - (b.listing.distanceMiles ?? Infinity); });
+}
+
 export async function searchRentCast(request: LiveSearchRequest, config: ProviderConfig, fetcher: typeof fetch = fetch, now = new Date()): Promise<LiveListing[]> {
   const rentCastResponse = await fetcher(buildRentCastUrl(request), { headers: { "X-Api-Key": config.rentCastApiKey, accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(12_000) });
   if (!rentCastResponse.ok) throw new ProviderError(`rentcast_http_${rentCastResponse.status}`, `RentCast returned ${rentCastResponse.status}`);
   const payload = await providerJson(rentCastResponse, 'rentcast', 2_000_000); if (!Array.isArray(payload)) throw new ProviderError('rentcast_invalid_payload', 'RentCast returned an invalid listing payload');
   if (payload.length && !payload.some(item => normalizeRentCastListing(item, now))) throw new ProviderError("source_evidence_unavailable", "Provider records lack required source evidence");
-  const seen = new Set<string>();
-  const areas = requestedAreas(request.intent); const geoFilter = areas.length > 0 && !singleCity(request.intent);
-  const candidates = payload.slice(0, MAX_PROVIDER_RECORDS).map((item, index) => ({ index, listing: normalizeRentCastListing(item, now), coordinate: coordinate(item) }))
-    .filter((item): item is typeof item & { listing: LiveListing } => item.listing !== null)
-    .filter(({ listing }) => (request.intent.maxRent === undefined || listing.rent <= request.intent.maxRent) && (request.intent.minBedrooms === undefined || listing.beds >= request.intent.minBedrooms))
-    .filter(({ listing }) => request.intent.requiredFeatures.every((feature) => listing.features.includes(feature)) && (!request.intent.warehouseStyle || listing.warehouseSignals.length > 0))
-    // Location is a hard requirement: a listing must fall inside one of the requested areas. Records without coordinates cannot qualify.
-    .map(item => { const nearest = nearestArea(item.coordinate, areas); return nearest ? { ...item, listing: { ...item.listing, area: nearest.area.label, distanceMiles: Math.round(nearest.miles * 10) / 10 } } : item; })
-    .filter(({ listing }) => !geoFilter || listing.area !== undefined)
-    .filter(({ listing }) => { const key = [listing.title, listing.city, listing.rent, listing.beds].join("|").toLowerCase().replace(/\s+/g, " "); if (seen.has(key)) return false; seen.add(key); return true; })
-    .sort((a, b) => { const relevance = (item: typeof a) => { const listing = item.listing; const haystack = `${listing.title} ${listing.neighborhood} ${listing.city} ${listing.features.join(" ")} ${listing.warehouseSignals.join(" ")}`.toLowerCase(); return request.intent.searchTerms.filter((term) => haystack.includes(term)).length + regionalPreference(item, request.intent.preferredRegions) * 2 + (request.intent.warehouseStyle ? listing.warehouseSignals.length : 0); }; return relevance(b) - relevance(a) || (a.listing.distanceMiles ?? Infinity) - (b.listing.distanceMiles ?? Infinity); });
+  const candidates = rankCandidates(payload.slice(0, MAX_PROVIDER_RECORDS).map((item, index) => ({ index, listing: normalizeRentCastListing(item, now), coordinate: coordinate(item) })), request);
 
   const needsCommute = request.intent.commute; if (!needsCommute || candidates.length === 0) return candidates.map(({ listing }) => listing);
 

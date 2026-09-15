@@ -1,8 +1,15 @@
 # LA Apartment Receiver
 
-A source-linked Los Angeles rental research workspace. Live searches use RentCast, require approved HTTPS listing links and images, and keep retrieval time separate from the provider's last-seen time. Every listing still needs an availability check at its original source.
+A source-linked Los Angeles rental research workspace. Live searches use Zillow via Apify (or RentCast), require approved HTTPS listing links and images, and keep retrieval time separate from the provider's last-seen time. Every listing still needs an availability check at its original source.
 
-> **Known launch blocker (confirmed 2026-09-15).** RentCast's published rental-listing schema contains no listing URL, photos, description, or neighborhood ([schema](https://developers.rentcast.io/reference/property-listings-schema)). The adapter's evidence gate therefore rejects every real RentCast record (`tests/providers.test.mjs`, "KNOWN BLOCKER"), and loft/warehouse detection has no text to read. Live search cannot return results until a source that supplies listing links, photos, and descriptions is approved, or the evidence contract is deliberately changed. Do not relax the gate to make a search "work".
+## Live sources
+
+`LISTING_PROVIDER` chooses the live source:
+
+- `zillow-apify` — Zillow rental listings retrieved through the Apify actor [`igolaizola/zillow-scraper-ppe`](https://apify.com/igolaizola/zillow-scraper-ppe) using `APIFY_TOKEN`. Records carry the exact `zillow.com` listing URL, `zillowstatic.com` photos, the full description (so loft evidence is graded A–D from the listing's own words), coordinates, year built, and days on Zillow. Searches are asynchronous: `POST /api/search` reserves one allowance slot, starts one bounded actor run per requested area cluster (at most 3; 40 records and $0.50 each), and returns `202` with a search id; the browser polls `GET /api/search-status?id=` until the runs finish (typically 10–90 s). A finished search for the same brief is reused for 6 hours without a new run. The server calls only `api.apify.com`; it never fetches listing pages or photos.
+- `rentcast` (default when unset) — kept for compatibility, but see the blocker below.
+
+> **Known blocker for the RentCast source (confirmed 2026-09-15).** RentCast's published rental-listing schema contains no listing URL, photos, description, or neighborhood ([schema](https://developers.rentcast.io/reference/property-listings-schema)). The adapter's evidence gate therefore rejects every real RentCast record (`tests/providers.test.mjs`, "KNOWN BLOCKER"), and loft/warehouse detection has no text to read. Live search cannot return results until a source that supplies listing links, photos, and descriptions is approved, or the evidence contract is deliberately changed. Do not relax the gate to make a search "work".
 
 Searches name areas, not addresses. Recognised areas (Arts District, Downtown LA, USC, UCLA, Westwood, Silver Lake, …) have approximate centre coordinates; a brief may name several as alternatives ("near UCLA, USC, or the Arts District"). One bounded provider request covers them all, and only listings whose coordinates fall inside a requested area are shown, with the straight-line distance in the evidence. A brief that asks for a loft or warehouse only shows listings whose own description carries that evidence; a short honest list is preferred to a padded one.
 
@@ -25,8 +32,8 @@ Netlify Dev's local Blobs server does not return an ETag on reads, and the allow
 ## Production
 
 - Build command: `npm run verify`; publish directory: `dist/client`.
-- Native functions: `netlify/functions`; routes: `/api/search` and `/api/health`.
-- Production-only `RENTCAST_API_KEY` is required for live searches. Optional `GOOGLE_ROUTES_API_KEY` enables traffic-aware route estimates. No credentials belong in Git or browser storage.
+- Native functions: `netlify/functions`; routes: `/api/search`, `/api/search-status`, and `/api/health`.
+- Production-only `APIFY_TOKEN` (with `LISTING_PROVIDER=zillow-apify`) or `RENTCAST_API_KEY` is required for live searches. Optional `GOOGLE_ROUTES_API_KEY` enables traffic-aware route estimates for the RentCast source; commute limits are not yet supported with the Zillow source. No credentials belong in Git or browser storage.
 - Set `LIVE_SEARCH_ENABLED=false` and redeploy to pause paid provider calls.
 - Shared live-search limits default to 25 per UTC day and 50 per UTC month. The allowance persists across deployments in Netlify Blobs. Invalid settings or unavailable storage block provider calls; failed searches retain their reservation. Optional overrides and provider-call bounds are documented in the runbook.
 - `/release.json` identifies the client build; `/api/health` identifies the function build and actual Node runtime. Both must show the deployed commit.
