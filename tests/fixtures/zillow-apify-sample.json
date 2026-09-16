@@ -1,0 +1,351 @@
+[
+ {
+  "zpid": 450241502,
+  "_type": "property",
+  "groupType": "apartmentComplex",
+  "url": "https://www.zillow.com/homedetails/450241502_zpid/",
+  "hdpUrl": "https://www.zillow.com/homedetails/201-S-Santa-Fe-Ave-Suite-211-Los-Angeles-CA-90012/450241502_zpid/",
+  "address": {
+   "city": "Los Angeles",
+   "state": "CA",
+   "streetAddress": "201 S Santa Fe Ave Suite 211",
+   "zipcode": "90012"
+  },
+  "listingDateTimeOnZillow": 1789082415785,
+  "media": {
+   "propertyPhotoLinks": {
+    "highResolutionLink": "https://photos.zillowstatic.com/fp/9a053b58c16bc8a4a54cb0a87df125b3-p_f.jpg"
+   },
+   "allPropertyPhotos": {
+    "highResolution": [
+     "https://photos.zillowstatic.com/fp/9a053b58c16bc8a4a54cb0a87df125b3-p_f.jpg"
+    ]
+   }
+  },
+  "rental": {
+   "isRoomForRent": false,
+   "baseRent": 2600
+  },
+  "_details": {
+   "homeStatus": "FOR_RENT",
+   "description": "All square footage is approximate and provided for informational purposes only. Actual dimensions and layouts may vary from unit to unit. Stated square footage may include patios, balconies, terraces, or other outdoor living spaces, where applicable.",
+   "latitude": 34.046837,
+   "longitude": -118.23298,
+   "resoFacts": {
+    "hasCooling": true,
+    "furnished": true,
+    "yearBuilt": null
+   }
+  },
+  "title": "RiverFront live - Work Lofts, 1 Bedroom, 1 Bath Loft Style",
+  "price": {
+   "value": 2600
+  },
+  "bedrooms": 1,
+  "bathrooms": 1,
+  "propertyType": "apartment",
+  "daysOnZillow": 0,
+  "livingArea": 903,
+  "location": {
+   "latitude": 34.046837,
+   "longitude": -118.23298
+  }
+ },
+ {
+  "zpid": 82883575,
+  "_type": "property",
+  "groupType": "apartmentComplex",
+  "url": "https://www.zillow.com/homedetails/82883575_zpid/",
+  "hdpUrl": "https://www.zillow.com/homedetails/1850-Industrial-St-APT-706-Los-Angeles-CA-90021/82883575_zpid/",
+  "address": {
+   "city": "Los Angeles",
+   "state": "CA",
+   "streetAddress": "1850 Industrial St APT 706",
+   "zipcode": "90021"
+  },
+  "listingDateTimeOnZillow": 1789082415785,
+  "media": {
+   "propertyPhotoLinks": {
+    "highResolutionLink": "https://photos.zillowstatic.com/fp/192f72f8c6a6851954bd96334131252b-p_f.jpg"
+   },
+   "allPropertyPhotos": {
+    "highResolution": [
+     "https://photos.zillowstatic.com/fp/192f72f8c6a6851954bd96334131252b-p_f.jpg"
+    ]
+   }
+  },
+  "rental": {
+   "isRoomForRent": false,
+   "baseRent": 8000
+  },
+  "_details": {
+   "homeStatus": "FOR_RENT",
+   "description": "LIVE/WORK! PET FRIENDLY! PRIVATE ROOFTOP!\n\nThis gorgeous top floor penthouse in the Biscuit Company Lofts building will be available for lease November 1. Some highlights of this two-story entertainer's paradise:\n\n-Open plan loft style space\n-Wolf range and stainless steel appliances\n-100% PRIVATE ROOFTOP\n-Wood burning fireplace\n-Sweeping mountain views\n-Natural hardwood floors\n-Generous storage space in 2 his-and-hers closets\n-High ceilings\n-Abundance of natural light\n\nThis historic building is known for unrivaled downtown living with its 75 ft saltwater pool, well maintained BBQ/gathering area with Viking grills, designer furniture, 24/7 concierge, newly redesigned lobby, and underground garage parking.\n\nReserved garage parking space included - EV charging ready.\n\nLong leases preferred.\n\nRenter pays for internet and electricity. No smoking inside the unit.",
+   "latitude": 34.035336,
+   "longitude": -118.2331,
+   "resoFacts": {
+    "hasCooling": true,
+    "furnished": false,
+    "yearBuilt": null
+   }
+  },
+  "price": {
+   "value": 8000
+  },
+  "bedrooms": 1,
+  "bathrooms": 2,
+  "propertyType": "apartment",
+  "daysOnZillow": 1,
+  "livingArea": 2060,
+  "location": {
+   "latitude": 34.035336,
+   "longitude": -118.2331
+  }
+ },
+ {
+  "zpid": 465209693,
+  "_type": "propertyGroup",
+  "groupType": "apartmentComplex",
+  "url": "https://www.zillow.com/homedetails/465209693_zpid/",
+  "hdpUrl": "https://www.zillow.com/homedetails/601-E-2nd-St-Los-Angeles-CA-90012/465209693_zpid/",
+  "address": {
+   "city": "Los Angeles",
+   "state": "CA",
+   "streetAddress": "601 E 2nd St",
+   "zipcode": "90012"
+  },
+  "listingDateTimeOnZillow": 1789082415785,
+  "media": {
+   "propertyPhotoLinks": {
+    "highResolutionLink": "https://photos.zillowstatic.com/fp/677ffbf839ba070982cc379e8b863186-p_f.jpg"
+   },
+   "allPropertyPhotos": {
+    "highResolution": [
+     "https://photos.zillowstatic.com/fp/677ffbf839ba070982cc379e8b863186-p_f.jpg"
+    ]
+   }
+  },
+  "rental": {
+   "isRoomForRent": false
+  },
+  "_details": {
+   "homeStatus": "FOR_RENT",
+   "description": "Newly renovated homes are now available. Located at the juncture of The Arts and Little Tokyo, residents enjoy 20 foot ceilings and easy access to the 5, 10, 101 & 110 freeways as well as a gold line metro stop.\n\nArtisan on 2nd apartments reside at the juncture of the 2 most vibrant districts in Downtown LA, The Arts and Little Tokyo. With some of the largest square footage to be found in DTLA, Artisan on 2nd features newly renovated apartments and lofts with soaring 20 foot ceilings!",
+   "latitude": 34.04773,
+   "longitude": -118.2368,
+   "resoFacts": {
+    "hasCooling": true,
+    "furnished": false,
+    "yearBuilt": 2008
+   }
+  },
+  "title": "Artisan on 2nd",
+  "minPrice": 2782,
+  "maxPrice": 3243,
+  "listingStatus": "forRent",
+  "location": {
+   "latitude": 34.04773,
+   "longitude": -118.2368
+  }
+ },
+ {
+  "zpid": 82882624,
+  "_type": "property",
+  "groupType": "apartmentComplex",
+  "url": "https://www.zillow.com/homedetails/82882624_zpid/",
+  "hdpUrl": "https://www.zillow.com/homedetails/100-S-Alameda-St-UNIT-424-Los-Angeles-CA-90012/82882624_zpid/",
+  "address": {
+   "city": "Los Angeles",
+   "state": "CA",
+   "streetAddress": "100 S Alameda St UNIT 424",
+   "zipcode": "90012"
+  },
+  "listingDateTimeOnZillow": 1789082415785,
+  "media": {
+   "propertyPhotoLinks": {
+    "highResolutionLink": "https://photos.zillowstatic.com/fp/7b17707a1528633704d8da4c472e4d8c-p_f.jpg"
+   },
+   "allPropertyPhotos": {
+    "highResolution": [
+     "https://photos.zillowstatic.com/fp/7b17707a1528633704d8da4c472e4d8c-p_f.jpg"
+    ]
+   }
+  },
+  "rental": {
+   "isRoomForRent": false,
+   "baseRent": 3700
+  },
+  "_details": {
+   "homeStatus": "FOR_RENT",
+   "description": "Welcome to Unit 424 at the highly sought-after Savoy Community, sitting right on the vibrant border of Little Tokyo and the Arts District. This rarely available top-floor residence has just been beautifully refreshed and features a unique dual-suite layout plus a cozy upstairs loft. Fresh paints throughout, brand-new premium carpet, and brand-new modern vinyl plank flooring. Stunning mosaic tile accent wall paired with a granite food island. Upstairs cozy loft featuring its own fireplace, making it the ultimate flexible space for a quiet home office, media room, or creative studio. Savoy Community offer large swimming pool, relaxing spa, lushly landscaped courtyards, Rooftop deck featuring spectacular DTLA skyline views. Rarely found Side by side parking spaces (295 &296) in P1 area. Unit is unfurnished. Washer & Dryer and a refrigerator are included. NO PET!\n\nLandlord pays HOA fees. 2 Parking spaces, Water and Trash services are included.",
+   "latitude": 34.048115,
+   "longitude": -118.23774,
+   "resoFacts": {
+    "hasCooling": true,
+    "furnished": false,
+    "yearBuilt": null
+   }
+  },
+  "price": {
+   "value": 3700
+  },
+  "bedrooms": 2,
+  "bathrooms": 2,
+  "propertyType": "condo",
+  "daysOnZillow": 3,
+  "location": {
+   "latitude": 34.048115,
+   "longitude": -118.23774
+  }
+ },
+ {
+  "zpid": 122236602,
+  "_type": "property",
+  "groupType": "apartmentComplex",
+  "url": "https://www.zillow.com/homedetails/122236602_zpid/",
+  "hdpUrl": "https://www.zillow.com/homedetails/130-S-Hewitt-St-APT-31-Los-Angeles-CA-90012/122236602_zpid/",
+  "address": {
+   "city": "Los Angeles",
+   "state": "CA",
+   "streetAddress": "130 S Hewitt St APT 31",
+   "zipcode": "90012"
+  },
+  "listingDateTimeOnZillow": 1789082415785,
+  "media": {
+   "propertyPhotoLinks": {
+    "highResolutionLink": "https://photos.zillowstatic.com/fp/1f1787dc1237d7816307706191d7552d-p_f.jpg"
+   },
+   "allPropertyPhotos": {
+    "highResolution": [
+     "https://photos.zillowstatic.com/fp/1f1787dc1237d7816307706191d7552d-p_f.jpg"
+    ]
+   }
+  },
+  "rental": {
+   "isRoomForRent": false,
+   "baseRent": 3000
+  },
+  "_details": {
+   "homeStatus": "FOR_RENT",
+   "description": "Loft in the Arts district in DTLA: nearby galleries, restaurants, bars, coffee shops, hotels, Little Tokyo. Open space loft with very high ceiling (ETA: 24 feet) and wall of glass with natural lighting. The main floor offers a large living and work space, with lots of wall space. Kitchen with stainless appliances. Polished and stained concrete floor. Bathroom with in-unit washer and dryer. 2nd floor is spacious loft style bedroom with custom linen curtains, wood floor, custom mirror. Quiet community in urban lift style\n\nCopyright The MLS. All rights reserved. Information is deemed reliable but not guaranteed.",
+   "latitude": 34.04762,
+   "longitude": -118.235825,
+   "resoFacts": {
+    "hasCooling": true,
+    "furnished": false,
+    "yearBuilt": 1936
+   }
+  },
+  "price": {
+   "value": 3000
+  },
+  "bedrooms": 1,
+  "bathrooms": 1,
+  "propertyType": "condo",
+  "daysOnZillow": 4,
+  "livingArea": 1201,
+  "yearBuilt": 1936,
+  "location": {
+   "latitude": 34.04762,
+   "longitude": -118.235825
+  }
+ },
+ {
+  "zpid": 2103447047,
+  "_type": "property",
+  "groupType": "apartmentComplex",
+  "url": "https://www.zillow.com/homedetails/2103447047_zpid/",
+  "hdpUrl": "https://www.zillow.com/homedetails/(undisclosed-Address)-Los-Angeles-CA-90013/2103447047_zpid/",
+  "address": {
+   "city": "Los Angeles",
+   "state": "CA",
+   "streetAddress": "(undisclosed Address)",
+   "zipcode": "90013"
+  },
+  "listingDateTimeOnZillow": 1789082415785,
+  "media": {
+   "propertyPhotoLinks": {
+    "highResolutionLink": "https://photos.zillowstatic.com/fp/53bef7526f68bf66c0f4c26b00c8f9f5-p_f.jpg"
+   },
+   "allPropertyPhotos": {
+    "highResolution": [
+     "https://photos.zillowstatic.com/fp/53bef7526f68bf66c0f4c26b00c8f9f5-p_f.jpg"
+    ]
+   }
+  },
+  "rental": {
+   "isRoomForRent": false,
+   "baseRent": 7167
+  },
+  "_details": {
+   "homeStatus": "FOR_RENT",
+   "description": "Monthly Furnished Rentals For 30 Nights Or More\nNestled in the vibrant heart of the Arts District in Los Angeles, this loft is a sanctuary amidst the creative spirit of the area. This 1200 sq ft loft epitomizes modern luxury with a unique Japandi-influenced decor. Situated within the historic Barker Block Lofts, a revitalized early 20th-century warehouse complex, the loft is part of a transformative project that has breathed new life into the industrial past of the area. The exclusive amenities elevate the experience further, featuring a rooftop pool and jacuzzi. We are a dog friendly community. For late check-ins and check-outs, additional charges apply. Monthly Furnished and Short Term Rentals For 30 Nights Or More",
+   "latitude": null,
+   "longitude": null,
+   "resoFacts": {
+    "hasCooling": null,
+    "furnished": true,
+    "yearBuilt": null
+   }
+  },
+  "price": {
+   "value": 7167
+  },
+  "bedrooms": 1,
+  "bathrooms": 2,
+  "propertyType": "apartment",
+  "daysOnZillow": 9
+ },
+ {
+  "zpid": 2084386993,
+  "_type": "property",
+  "groupType": "apartmentComplex",
+  "url": "https://www.zillow.com/homedetails/2084386993_zpid/",
+  "hdpUrl": "https://www.zillow.com/homedetails/1375-Midvale-Ave-APT-313-Los-Angeles-CA-90024/2084386993_zpid/",
+  "address": {
+   "city": "Los Angeles",
+   "state": "CA",
+   "streetAddress": "1375 Midvale Ave APT 313",
+   "zipcode": "90024"
+  },
+  "listingDateTimeOnZillow": 1789082415785,
+  "media": {
+   "propertyPhotoLinks": {
+    "highResolutionLink": "https://photos.zillowstatic.com/fp/aaaa0000-p_f.jpg"
+   },
+   "allPropertyPhotos": {
+    "highResolution": [
+     "https://photos.zillowstatic.com/fp/aaaa0000-p_f.jpg"
+    ]
+   }
+  },
+  "rental": {
+   "isRoomForRent": false,
+   "baseRent": 2995
+  },
+  "_details": {
+   "homeStatus": "FOR_RENT",
+   "description": "Charming one bedroom with loft in the heart of Westwood, walking distance to UCLA. Renovated kitchen, hardwood floors, on-site laundry and one parking space included.",
+   "latitude": 34.055473,
+   "longitude": -118.44358,
+   "resoFacts": {
+    "hasCooling": true,
+    "furnished": false,
+    "yearBuilt": null
+   }
+  },
+  "title": "1375 Midvale Apartments, 1 BR with loft",
+  "price": {
+   "value": 2995
+  },
+  "bedrooms": 1,
+  "bathrooms": 1,
+  "propertyType": "apartment",
+  "daysOnZillow": 12,
+  "livingArea": 761,
+  "location": {
+   "latitude": 34.055473,
+   "longitude": -118.44358
+  }
+ }
+]

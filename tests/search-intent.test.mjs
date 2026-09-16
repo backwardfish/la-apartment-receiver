@@ -87,3 +87,33 @@ test('unfurnished searches do not accidentally require furnished listings', () =
   assert.ok(!parseSearchIntent('an unfurnished apartment with parking').requiredFeatures.includes('Furnished'));
   assert.ok(parseSearchIntent('a furnished apartment with parking').requiredFeatures.includes('Furnished'));
 });
+
+test("recognises USC, UCLA, and Downtown LA clusters as alternatives in one brief", () => {
+  const intent = parseSearchIntent("Find me a warehouse-style apartment, loft, or bachelor-pad type place near UCLA, USC, or the Arts District in Downtown LA");
+  assert.deepEqual(intent.locations, ["ucla", "usc", "arts district", "downtown los angeles"]);
+  assert.equal(intent.locationQuery, "ucla");
+  assert.equal(intent.warehouseStyle, true);
+  assert.equal(intent.bachelorPad, true);
+  assert.deepEqual(intent.searchTerms, [], "area names and archetype words are not leftover ranking noise");
+  assert.match(describeSearchIntent(intent), /near UCLA \/ USC \/ Arts District \/ Downtown LA/);
+  assert.deepEqual(parseSearchIntent("apartment in University Park near Exposition Park").locations, ["usc"]);
+  assert.deepEqual(parseSearchIntent("studio in Westwood Village").locations, ["ucla"]);
+  assert.deepEqual(parseSearchIntent("one bedroom in West Hollywood").locations, ["west hollywood"], "West Hollywood is not also Hollywood");
+});
+
+test("loft descriptors such as exposed brick and high ceilings count as warehouse intent", () => {
+  for (const query of ["exposed brick and high ceilings downtown", "open floor plan converted building", "live/work space"]) {
+    assert.equal(parseSearchIntent(query).warehouseStyle, true, query);
+  }
+  assert.equal(parseSearchIntent("quiet one bedroom with parking").warehouseStyle, false);
+});
+
+test("a loft brief hides generic snapshot listings instead of ranking them as strong matches", () => {
+  const snapshot = [
+    ...fixtures,
+    { title: "Studio loft with two parking spaces in Hollywood", neighborhood: "Hollywood", city: "Los Angeles", rent: 2050, beds: 0, features: ["Parking", "Laundry"] },
+  ];
+  assert.deepEqual(tailorListings(snapshot, parseSearchIntent("Industrial loft with parking")).map((listing) => listing.title), ["Studio loft with two parking spaces in Hollywood"]);
+  assert.deepEqual(tailorListings(snapshot, parseSearchIntent("loft in Arts District")), []);
+  assert.equal(tailorListings(snapshot, parseSearchIntent("parking")).length, 3);
+});

@@ -3,9 +3,13 @@ export type SearchIntent = {
   maxRent?: number;
   minBedrooms?: number;
   requiredFeatures: string[];
+  /** First requested area (kept for compatibility); see `locations` for every requested area. */
   locationQuery?: string;
+  /** Every requested area, in the order written. Areas are alternatives ("near UCLA, USC, or the Arts District"). */
+  locations: string[];
   preferredRegions: Array<"south" | "east">;
   warehouseStyle: boolean;
+  bachelorPad: boolean;
   commute?: {
     origin: string;
     maxMinutes: number;
@@ -36,10 +40,10 @@ const FEATURE_ALIASES: Record<string, string[]> = {
 
 const STOP_WORDS = new Set([
   "a", "an", "and", "apartment", "apartments", "around", "at", "be", "bed",
-  "bedroom", "bedrooms", "br", "eight", "five", "for", "four", "home", "i", "in", "is", "looking",
-  "max", "maximum", "me", "month", "near", "of", "or", "place", "plus",
-  "nine", "one", "rent", "rental", "rentals", "seven", "show", "six", "the",
-  "three", "to", "two", "under", "up", "want", "with",
+  "bedroom", "bedrooms", "br", "eight", "feel", "find", "five", "for", "four", "home", "i", "ideally", "in", "is", "kind", "like", "looking",
+  "max", "maximum", "me", "month", "near", "of", "or", "place", "please", "plus", "preferably",
+  "nine", "one", "rent", "rental", "rentals", "seven", "show", "six", "something", "the",
+  "three", "to", "two", "type", "under", "up", "vibe", "want", "with",
 ]);
 
 const BEDROOM_WORDS: Record<string, number> = {
@@ -50,20 +54,27 @@ const BEDROOM_WORDS: Record<string, number> = {
   five: 5,
 };
 
-const LOCATION_ALIASES: Record<string, string[]> = {
+// Canonical area keys. Every key here should have coordinates in
+// `providers.ts` (AREA_CENTERS) so live searches can filter by distance.
+export const LOCATION_ALIASES: Record<string, string[]> = {
   "arts district": ["arts district"],
   "beverly hills": ["beverly hills"],
+  "boyle heights": ["boyle heights"],
   brentwood: ["brentwood"],
   burbank: ["burbank"],
+  chinatown: ["chinatown"],
   "culver city": ["culver city"],
   "downtown los angeles": ["downtown la", "dtla", "downtown los angeles"],
   "eagle rock": ["eagle rock"],
   "echo park": ["echo park"],
+  "fashion district": ["fashion district"],
   glendale: ["glendale"],
   "highland park": ["highland park"],
+  "historic core": ["historic core"],
   hollywood: ["hollywood"],
   inglewood: ["inglewood"],
-  koreatown: ["koreatown", "k-town"],
+  koreatown: ["koreatown", "k town", "ktown"],
+  "little tokyo": ["little tokyo"],
   "long beach": ["long beach"],
   "los feliz": ["los feliz"],
   "mar vista": ["mar vista"],
@@ -71,9 +82,12 @@ const LOCATION_ALIASES: Record<string, string[]> = {
   pasadena: ["pasadena"],
   "playa vista": ["playa vista"],
   "santa monica": ["santa monica"],
-  "silver lake": ["silver lake"],
+  "silver lake": ["silver lake", "silverlake"],
   torrance: ["torrance"],
+  ucla: ["ucla", "westwood village", "university of california los angeles", "university of california, los angeles"],
+  usc: ["usc", "university park", "exposition park", "university of southern california"],
   venice: ["venice"],
+  "west adams": ["west adams"],
   "west hollywood": ["west hollywood", "weho"],
   westwood: ["westwood"],
 };
@@ -86,7 +100,35 @@ const WAREHOUSE_STYLE_ALIASES = [
   "live work",
   "live/work",
   "loft",
+  "exposed brick",
+  "high ceiling",
+  "open floor plan",
+  "converted building",
 ];
+
+const BACHELOR_PAD_ALIASES = ["bachelor pad", "bachelor-pad", "bachelorpad"];
+
+/**
+ * Find every known area named in the text, longest alias first so that
+ * "West Hollywood" is not also read as "Hollywood". Returns canonical keys in
+ * the order they appear.
+ */
+export function findKnownLocations(haystack: string): string[] {
+  let masked = haystack;
+  const found: Array<{ key: string; index: number }> = [];
+  const aliases = Object.entries(LOCATION_ALIASES)
+    .flatMap(([key, list]) => list.map((alias) => ({ key, alias: ` ${alias} ` })))
+    .sort((a, b) => b.alias.length - a.alias.length);
+  for (const { key, alias } of aliases) {
+    let index = masked.indexOf(alias);
+    while (index !== -1) {
+      if (!found.some((entry) => entry.key === key)) found.push({ key, index });
+      masked = masked.slice(0, index + 1) + " ".repeat(alias.length - 2) + masked.slice(index + alias.length - 1);
+      index = masked.indexOf(alias);
+    }
+  }
+  return found.sort((a, b) => a.index - b.index).map((entry) => entry.key);
+}
 
 function parseCommute(normalized: string) {
   const match = normalized.match(
@@ -130,15 +172,18 @@ export function parseSearchIntent(raw: string): SearchIntent {
   const wordBedroomMatch = normalized.match(/\b(one|two|three|four|five)\s*(?:-|\s)*(?:bed(?:room)?s?|br)\b/);
   const locationMatch = locationInput.match(/\b(?:in|near|around)\s+([a-z][a-z\s'-]*?)(?=\s+(?:under|up to|max(?:imum)?|with|and|for)\b|[,.;!?]|$)/);
   const explicitLocation = locationMatch?.[1]?.trim().replace(/\s+/g, " ");
-  const locationHaystack = (" " + locationInput.replace(/[^a-z0-9-]+/g, " ") + " ").replace(/\s+/g, " ");
-  const knownLocation = Object.entries(LOCATION_ALIASES)
-    .sort(([a], [b]) => b.length - a.length)
-    .find(([, aliases]) => aliases.some((alias) => locationHaystack.includes(" " + alias + " ")))?.[0];
-  const locationQuery = explicitLocation ?? knownLocation;
+  const locationHaystack = (" " + locationInput.replace(/[^a-z0-9]+/g, " ") + " ").replace(/\s+/g, " ");
+  // Known areas win over the free-text capture so "near UCLA, USC, or the
+  // Arts District" yields three areas instead of one garbled address.
+  const knownLocations = findKnownLocations(locationHaystack);
+  const locations = knownLocations.length ? knownLocations : explicitLocation ? [explicitLocation] : [];
+  const locationQuery = locations[0];
   const preferredRegions = (["south", "east"] as const).filter((region) =>
     new RegExp(`\\b${region}(?:ern)?(?:\s+la)?\\b`).test(normalized),
   );
-  const warehouseStyle = WAREHOUSE_STYLE_ALIASES.some((alias) => normalized.includes(alias));
+  const styleHaystack = normalized.replace(/-/g, " ");
+  const warehouseStyle = WAREHOUSE_STYLE_ALIASES.some((alias) => styleHaystack.includes(alias.replace(/-/g, " ")));
+  const bachelorPad = BACHELOR_PAD_ALIASES.some((alias) => normalized.includes(alias));
   const requiredFeatures = Object.entries(FEATURE_ALIASES)
     .filter(([feature, aliases]) => aliases.some((alias) => normalized.includes(alias)) && !(feature === 'Furnished' && /\bunfurnished\b|\bnot furnished\b/.test(normalized)))
     .map(([feature]) => feature);
@@ -148,9 +193,13 @@ export function parseSearchIntent(raw: string): SearchIntent {
       .flat()
       .flatMap((alias) => alias.trim().split(/\s+/)),
   );
-  const locationWords = new Set(locationQuery ? normalizedWords(locationQuery) : []);
+  const locationWords = new Set([
+    ...locations.flatMap(normalizedWords),
+    ...locations.flatMap((key) => (LOCATION_ALIASES[key] ?? []).flatMap(normalizedWords)),
+  ]);
   const semanticWords = new Set([
     ...WAREHOUSE_STYLE_ALIASES.flatMap(normalizedWords),
+    ...BACHELOR_PAD_ALIASES.flatMap(normalizedWords),
     ...preferredRegions,
     ...(commute ? normalizedWords(commute.origin) : []),
     "within",
@@ -184,11 +233,19 @@ export function parseSearchIntent(raw: string): SearchIntent {
         : undefined,
     requiredFeatures,
     locationQuery,
+    locations,
     preferredRegions,
     warehouseStyle,
+    bachelorPad,
     commute,
     searchTerms,
   };
+}
+
+/** Text evidence that a listing has warehouse, loft, or industrial character. */
+export function hasWarehouseEvidence(text: string): boolean {
+  const haystack = ` ${text.toLowerCase().replace(/-/g, " ")} `;
+  return WAREHOUSE_STYLE_ALIASES.some((alias) => haystack.includes(alias.replace(/-/g, " ")));
 }
 
 export function tailorListings<T extends IntentListing>(listings: T[], intent: SearchIntent): T[] {
@@ -202,13 +259,20 @@ export function tailorListings<T extends IntentListing>(listings: T[], intent: S
     .map((location) => location.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim())
     .filter((location) => location.length > 2 && rawSearch.includes(location) && location !== intent.commute?.origin)
     .sort((a, b) => b.length - a.length)[0];
-  const requestedLocation = intent.locationQuery?.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() ?? inferredLocation;
+  const requestedLocations = intent.locations.length
+    ? intent.locations.map((location) => location.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim())
+    : inferredLocation ? [inferredLocation] : [];
+  const requestedLocation = requestedLocations[0];
 
   const locationMatches = (listing: T) => {
-    if (!requestedLocation) return true;
+    if (!requestedLocations.length) return true;
     const location = `${listing.neighborhood} ${listing.city}`.toLowerCase().replace(/[^a-z0-9]+/g, " ");
-    return location.includes(requestedLocation);
+    return requestedLocations.some((requested) => location.includes(requested));
   };
+  // "Loft" is a hard requirement, not a ranking hint: a generic apartment must
+  // not be presented as a match for a warehouse/loft brief.
+  const styleMatches = (listing: T) =>
+    !intent.warehouseStyle || hasWarehouseEvidence(`${listing.title} ${listing.features.join(" ")} ${(listing as { warehouseSignals?: string[] }).warehouseSignals?.join(" ") ?? ""}`);
 
   return listings
     .filter((listing) => intent.maxRent === undefined || listing.rent <= intent.maxRent)
@@ -217,6 +281,7 @@ export function tailorListings<T extends IntentListing>(listings: T[], intent: S
       intent.requiredFeatures.every((feature) => listing.features.includes(feature)),
     )
     .filter(locationMatches)
+    .filter(styleMatches)
     .map((listing) => {
       const haystack = `${listing.title} ${listing.neighborhood} ${listing.city} ${listing.features.join(" ")}`.toLowerCase();
       const termMatches = intent.searchTerms.filter((term) => haystack.includes(term)).length;
@@ -229,6 +294,14 @@ export function tailorListings<T extends IntentListing>(listings: T[], intent: S
     .map(({ listing }) => listing);
 }
 
+/** Human-readable area name for a canonical location key or free-text area. */
+export function displayArea(key: string): string {
+  if (key === "usc") return "USC";
+  if (key === "ucla") return "UCLA";
+  if (key === "downtown los angeles") return "Downtown LA";
+  return key.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export function describeSearchIntent(intent: SearchIntent): string {
   const parts: string[] = [];
   if (intent.maxRent !== undefined) parts.push(`up to $${intent.maxRent.toLocaleString("en-US")}`);
@@ -236,8 +309,9 @@ export function describeSearchIntent(intent: SearchIntent): string {
     parts.push(intent.minBedrooms === 0 ? "studio or larger" : `${intent.minBedrooms}+ bedroom`);
   }
   if (intent.requiredFeatures.length) parts.push(intent.requiredFeatures.join(" + ").toLowerCase());
-  if (intent.locationQuery) parts.push(`in ${intent.locationQuery}`);
+  if (intent.locations.length) parts.push(`near ${intent.locations.map(displayArea).join(" / ")}`);
   if (intent.warehouseStyle) parts.push("warehouse-style");
+  if (intent.bachelorPad) parts.push("bachelor-pad feel");
   if (intent.preferredRegions.length) parts.push(`${intent.preferredRegions.join(" / ")} LA`);
   if (intent.commute) parts.push(`within ${intent.commute.maxMinutes} min drive of ${intent.commute.origin}`);
   if (intent.searchTerms.length) parts.push(intent.searchTerms.join(" "));

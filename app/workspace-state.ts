@@ -8,6 +8,8 @@ export type PersistedListing = {
   capturedAt?: string; lastSeenAt?: string; fit: number;
   why: string[]; unknowns: string[]; redFlags: string[];
   warehouseSignals?: string[];
+  styleGrade?: 'A' | 'B' | 'C' | 'D'; cautions?: string[]; yearBuilt?: number; listedDaysAgo?: number;
+  area?: string; distanceMiles?: number;
 };
 export type Workspace = {
   saved: string[]; rejected: string[]; compare: string[]; activeQuery: string;
@@ -41,6 +43,12 @@ export function sanitizePersistedListings(value: unknown): PersistedListing[] | 
     if(capturedAt)clean.capturedAt=capturedAt;
     if(lastSeenAt)clean.lastSeenAt=lastSeenAt;
     if(stringArray(l.warehouseSignals))clean.warehouseSignals=l.warehouseSignals;
+    if(['A','B','C','D'].includes(String(l.styleGrade)))clean.styleGrade=l.styleGrade as PersistedListing['styleGrade'];
+    if(stringArray(l.cautions))clean.cautions=l.cautions;
+    if(finite(l.yearBuilt)&&l.yearBuilt>1600&&l.yearBuilt<2100)clean.yearBuilt=l.yearBuilt;
+    if(finite(l.listedDaysAgo)&&l.listedDaysAgo<=100000)clean.listedDaysAgo=l.listedDaysAgo;
+    if(text(l.area)&&l.area.length<=80)clean.area=l.area;
+    if(finite(l.distanceMiles)&&l.distanceMiles<=1000)clean.distanceMiles=l.distanceMiles;
     result.push(clean);
   }
   return result;

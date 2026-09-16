@@ -53,6 +53,9 @@ const checks = [
   { name:'wrong media', path:'/api/search', init:{method:'POST',headers:{'content-type':'text/plain'},body:'invalid'}, expected:415 },
   { name:'oversized body', path:'/api/search', init:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query:'',padding:'x'.repeat(20_001)})}, expected:413 },
   { name:'direct function route', path:'/.netlify/functions/search', expected:404 },
+  { name:'status without id', path:'/api/search-status', expected:400 },
+  { name:'status unknown id', path:'/api/search-status?id=00000000-0000-4000-8000-000000000000', expected:404 },
+  { name:'status wrong method', path:'/api/search-status', init:{ method:'POST' }, expected:405 },
 ];
 if (flags.includes('--expect-paused')) checks.push({name:'paused search',path:'/api/search',init:{method:'POST',headers:{'content-type':'application/json'},body:'{"query":"one bedroom"}'},expected:503});
 for (const check of checks) {
