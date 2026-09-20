@@ -29,7 +29,7 @@ export const createHealthHandler = (
 
   if (url.searchParams.get('provider') === '1') {
     if (providerConfigured) {
-      try { await probeActor(apifyToken); actorAccessible = true; }
+      try { await probeActor(apifyToken!); actorAccessible = true; }
       catch { actorAccessible = false; }
     } else {
       actorAccessible = false;
