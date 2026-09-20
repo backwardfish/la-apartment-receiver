@@ -43,7 +43,7 @@ export type LiveListing = {
 
 export type LiveSearchRequest = {
   query: string;
-  neighborhood: NeighborhoodKey;
+  neighborhood?: NeighborhoodKey;
   intent: SearchIntent;
 };
 
@@ -75,12 +75,13 @@ export type LiveSearchPending = {
 export type LiveSearchResponse = LiveSearchSuccess | LiveSearchUnavailable | LiveSearchPending;
 export type LiveSearchOutcome = LiveSearchSuccess | LiveSearchUnavailable;
 
-export function buildLiveSearchRequest(query: string, neighborhood: unknown): LiveSearchRequest {
+export function buildLiveSearchRequest(query: string, neighborhood?: unknown): LiveSearchRequest {
   const trimmedQuery = query.trim();
   if (!trimmedQuery) throw new Error("Describe the apartment you want before searching.");
   if (trimmedQuery.length > 500) throw new Error("Keep the apartment search under 500 characters.");
-  if (!isNeighborhoodKey(neighborhood)) throw new Error("Choose a supported Los Angeles neighborhood.");
   const parsed = parseSearchIntent(trimmedQuery);
+  if (neighborhood === undefined) return { query: trimmedQuery, intent: parsed };
+  if (!isNeighborhoodKey(neighborhood)) throw new Error("Choose a supported Los Angeles neighborhood.");
   return {
     query: trimmedQuery,
     neighborhood,
