@@ -10,7 +10,7 @@
  * reports progress and, once every run has succeeded, returns ranked results.
  */
 import type { LiveListing, LiveSearchRequest } from "./live-search.ts";
-import { LA_CENTER, ProviderError, distanceMiles, enclosingCircle, rankCandidates, requestedAreas, styleFields, detectFeatures, type AreaCenter, type Candidate } from "./providers.ts";
+import { ProviderError, rankCandidates, requestedAreas, styleFields, detectFeatures, type Candidate } from "./providers.ts";
 import { trustedUrl } from "./security-urls.ts";
 import { assessStyle, styleText } from "./style.ts";
 
