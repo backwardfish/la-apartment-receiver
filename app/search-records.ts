@@ -12,10 +12,11 @@ import type { StartedRun } from './zillow-apify.ts';
  * no credentials, IPs, or account data; the query text is what the user typed.
  */
 export type SearchRecord = {
-  version: 1;
+  version: 2;
   id: string;
   createdAt: string;
   query: string;
+  neighborhood: string;
   provider: 'zillow-apify';
   cacheKey: string;
   runs: StartedRun[];
@@ -57,15 +58,15 @@ export function isFreshRecord(record: SearchRecord, now = Date.now()): boolean {
 function unavailable(): never { throw new ProviderError('search_store_unavailable', 'Search storage is unavailable'); }
 
 export function searchStore(options: { name?: string; siteID?: string; token?: string; fetcher?: typeof fetch; signal?: AbortSignal } = {}): SearchStore {
-  const deadline = options.signal ?? AbortSignal.timeout(8_000);
   const store = getStore({
     name: options.name ?? 'receiver-live-searches-v1',
     consistency: 'strong',
     ...(options.siteID ? { siteID: options.siteID } : {}),
     ...(options.token ? { token: options.token } : {}),
     fetch: async (input, init) => {
-      if (deadline.aborted) unavailable();
-      const result = await (options.fetcher ?? fetch)(input, { ...init, redirect: 'error', signal: deadline });
+      const signal = options.signal ?? AbortSignal.timeout(8_000);
+      if (signal.aborted) unavailable();
+      const result = await (options.fetcher ?? fetch)(input, { ...init, redirect: 'error', signal });
       const method = init?.method?.toUpperCase() ?? 'GET';
       if (result.status !== 200 && !(method === 'GET' && result.status === 404)) unavailable();
       return result;
@@ -74,7 +75,7 @@ export function searchStore(options: { name?: string; siteID?: string; token?: s
   const record = (value: unknown): SearchRecord | null => {
     if (!value || typeof value !== 'object') return null;
     const candidate = value as SearchRecord;
-    if (candidate.version !== 1 || !SEARCH_ID_PATTERN.test(candidate.id) || typeof candidate.query !== 'string' || !Array.isArray(candidate.runs) || !['running', 'done', 'failed'].includes(candidate.status)) return null;
+    if (candidate.version !== 2 || !SEARCH_ID_PATTERN.test(candidate.id) || typeof candidate.query !== 'string' || typeof candidate.neighborhood !== 'string' || !Array.isArray(candidate.runs) || !['running', 'done', 'failed'].includes(candidate.status)) return null;
     return candidate;
   };
   return {
