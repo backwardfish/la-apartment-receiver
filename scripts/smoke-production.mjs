@@ -19,12 +19,17 @@ for (let attempt = 0; attempt < (flags.includes('--wait') ? 30 : 1); attempt++) 
 }
 assert.equal(release.revision, revision, 'Production has not reached the expected commit');
 assert.equal(release.dirty, false, 'Production must contain a clean reviewed commit');
-const health = await request('/api/health?readiness=1');
-assert.equal(health.status, 200, 'Allowance storage must be reachable');
+const health = await request('/api/health?readiness=1&provider=1');
+assert.equal(health.status, 200, 'Storage and configured live provider must be ready');
 assert.equal(health.headers.get('cache-control'), 'no-store');
 const status = await health.json();
 assert.deepEqual(status.release, release, 'Client and function provenance must agree');
 assert.equal(status.allowanceStore, 'reachable');
+assert.equal(status.liveSearchStore, 'reachable');
+assert.equal(status.provider, 'zillow-apify');
+assert.equal(status.liveSearchEnabled, true);
+assert.equal(status.providerConfigured, true);
+assert.equal(status.actorAccessible, true);
 assert.match(status.runtimeNode, /^v22\./);
 
 const page = await request('/');
@@ -49,6 +54,8 @@ assert.deepEqual(new Set(scripts.match(/'sha256-[^']+'/g)), new Set(hashes), 'Se
 // Every default search request is invalid before credential access or reservation.
 const checks = [
   { name:'invalid query', path:'/api/search', init:{ method:'POST', headers:{'content-type':'application/json'}, body:'{"query":""}' }, expected:400 },
+  { name:'missing neighborhood', path:'/api/search', init:{ method:'POST', headers:{'content-type':'application/json'}, body:'{"query":"loft"}' }, expected:400 },
+  { name:'invalid neighborhood', path:'/api/search', init:{ method:'POST', headers:{'content-type':'application/json'}, body:'{"query":"loft","neighborhood":"not-real"}' }, expected:400 },
   { name:'wrong method', path:'/api/search', expected:405 },
   { name:'wrong media', path:'/api/search', init:{method:'POST',headers:{'content-type':'text/plain'},body:'invalid'}, expected:415 },
   { name:'oversized body', path:'/api/search', init:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query:'',padding:'x'.repeat(20_001)})}, expected:413 },
@@ -57,7 +64,7 @@ const checks = [
   { name:'status unknown id', path:'/api/search-status?id=00000000-0000-4000-8000-000000000000', expected:404 },
   { name:'status wrong method', path:'/api/search-status', init:{ method:'POST' }, expected:405 },
 ];
-if (flags.includes('--expect-paused')) checks.push({name:'paused search',path:'/api/search',init:{method:'POST',headers:{'content-type':'application/json'},body:'{"query":"one bedroom"}'},expected:503});
+if (flags.includes('--expect-paused')) checks.push({name:'paused search',path:'/api/search',init:{method:'POST',headers:{'content-type':'application/json'},body:'{"query":"one bedroom","neighborhood":"arts district"}'},expected:503});
 for (const check of checks) {
   const response = await request(check.path, check.init);
   assert.equal(response.status, check.expected, check.name);
@@ -68,4 +75,4 @@ for (const check of checks) {
     if (check.name === 'paused search') assert.equal((await response.json()).code, 'search_paused');
   }
 }
-console.log(JSON.stringify({checkedAt:new Date().toISOString(),site:root.origin,revision,dirty:release.dirty,runtime:status.runtimeNode,allowanceStore:status.allowanceStore,cspInlineHashes:new Set(hashes).size,checks:checks.map(({name,expected})=>({name,status:expected})),providerCalls:flags.includes('--expect-paused')?'zero if paused assertion passed':'zero by request construction'},null,2));
+console.log(JSON.stringify({checkedAt:new Date().toISOString(),site:root.origin,revision,dirty:release.dirty,runtime:status.runtimeNode,allowanceStore:status.allowanceStore,liveSearchStore:status.liveSearchStore,provider:status.provider,actorAccessible:status.actorAccessible,cspInlineHashes:new Set(hashes).size,checks:checks.map(({name,expected})=>({name,status:expected})),providerCalls:flags.includes('--expect-paused')?'zero if paused assertion passed':'zero by request construction'},null,2));
