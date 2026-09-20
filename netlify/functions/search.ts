@@ -43,7 +43,7 @@ export async function boundedJson(request: Request): Promise<unknown> {
   } finally { reader.releaseLock(); }
 }
 
-/** `LISTING_PROVIDER` selects the live source. RentCast remains the default so existing deployments do not change behaviour. */
+/** `LISTING_PROVIDER` must explicitly select a supported live source; missing/unknown values fail closed. */
 export function listingProvider(get: (key: string) => string | undefined): 'rentcast' | 'zillow-apify' | 'unconfigured' {
   const value = get('LISTING_PROVIDER')?.trim().toLowerCase();
   if (value === 'zillow-apify' || value === 'rentcast') return value;
