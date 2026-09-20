@@ -133,7 +133,8 @@ async function zillowSearch(normalized: LiveSearchRequest, requestId: string, un
     return response({ status: 'pending', searchId: record.id, pollAfterMs: POLL_AFTER_MS, provider: ZILLOW_PROVIDER_LABEL, finished: 0, total: runs.length, elapsedMs: 0 }, 202, requestId);
   } catch (error) {
     console.error(JSON.stringify({ event: 'live_search_failed', requestId, code: error instanceof ProviderError ? error.code : 'provider_failure' }));
-    return unavailable('search_provider_error', 'The live-search provider is unavailable. Please try again shortly.', 502);
+    const providerCode = error instanceof ProviderError ? error.code : 'provider_failure';
+    return unavailable('search_provider_error', `The live-search provider is unavailable (${providerCode}). Please try again shortly.`, 502);
   }
 }
 export default createSearchHandler();
