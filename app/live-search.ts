@@ -16,6 +16,8 @@ export type LiveListing = {
   source: string;
   sourceUrl: string;
   image: string;
+  /** Ordered, source-backed listing photos. `image` remains the primary/legacy thumbnail. */
+  images?: string[];
   features: string[];
   freshness: ListingFreshness;
   capturedAt: string;
