@@ -10,15 +10,17 @@ export const createHealthHandler = (
   readAllowance = () => budgetStore().read(),
   readSearchStore = () => searchStore().get('00000000-0000-4000-8000-000000000000'),
   probeActor = (token: string) => probeZillowActor({ apifyToken: token }),
+  getEnv: (key: string) => string | undefined = (key) => Netlify.env.get(key),
 ) => async (request: Request) => {
   const url = new URL(request.url);
   let allowanceStore: 'reachable' | 'unavailable' | undefined;
   let liveSearchStore: 'reachable' | 'unavailable' | undefined;
   let actorAccessible: boolean | undefined;
-  const provider = Netlify.env.get('LISTING_PROVIDER')?.trim().toLowerCase();
-  const liveSearchEnabled = Netlify.env.get('LIVE_SEARCH_ENABLED') === 'true';
-  const apifyToken = Netlify.env.get('APIFY_TOKEN');
-  const providerConfigured = provider === 'zillow-apify' && !!apifyToken;
+  const provider = getEnv('LISTING_PROVIDER')?.trim().toLowerCase();
+  const liveSearchEnabled = getEnv('LIVE_SEARCH_ENABLED') === 'true';
+  const apifyToken = getEnv('APIFY_TOKEN');
+  const rentCastApiKey = getEnv('RENTCAST_API_KEY');
+  const providerConfigured = provider === 'zillow-apify' ? !!apifyToken : provider === 'rentcast' ? !!rentCastApiKey : false;
 
   if (url.searchParams.get('readiness') === '1') {
     try { await readAllowance(); allowanceStore = 'reachable'; }
@@ -28,15 +30,18 @@ export const createHealthHandler = (
   }
 
   if (url.searchParams.get('provider') === '1') {
-    if (providerConfigured) {
-      try { await probeActor(apifyToken!); actorAccessible = true; }
+    if (provider === 'zillow-apify' && apifyToken) {
+      try { await probeActor(apifyToken); actorAccessible = true; }
       catch { actorAccessible = false; }
+    } else if (provider === 'rentcast' && rentCastApiKey) {
+      actorAccessible = undefined;
     } else {
       actorAccessible = false;
     }
   }
 
-  const providerHealthy = url.searchParams.get('provider') !== '1' || (providerConfigured && actorAccessible === true);
+  const providerHealthy = url.searchParams.get('provider') !== '1'
+    || (provider === 'zillow-apify' ? providerConfigured && actorAccessible === true : provider === 'rentcast' ? providerConfigured : false);
   const available = allowanceStore !== 'unavailable' && liveSearchStore !== 'unavailable' && providerHealthy;
   return new Response(JSON.stringify({
     status: available ? 'ok' : 'degraded',
