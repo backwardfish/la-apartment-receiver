@@ -7,7 +7,7 @@ import { completedEnvelope, POLL_AFTER_MS, response, ZILLOW_PROVIDER_LABEL } fro
 
 declare const Netlify: { env: { get(key: string): string | undefined } };
 
-const FAILURE_MESSAGE = 'The live-search provider did not finish this search. Please try again shortly.';
+const failureMessage = (code?: string) => `The live-search provider did not finish this search${code ? ` (${code})` : ''}. Please try again shortly.`;
 
 /**
  * Progress endpoint for asynchronous provider runs. It never starts provider
@@ -26,14 +26,14 @@ export const createSearchStatusHandler = (store: () => SearchStore = () => searc
   catch { console.error(JSON.stringify({ event: 'search_store_unavailable', requestId })); return unavailable('search_store_unavailable', 'Live search is temporarily unavailable while its search storage cannot be reached. Please try again later.', 503); }
   if (!record) return unavailable('search_not_found', 'That live search is no longer available. Start a new search.', 404);
   if (record.status === 'done') return response(completedEnvelope(record, false), 200, requestId);
-  if (record.status === 'failed') return unavailable('search_provider_error', FAILURE_MESSAGE, 502);
+  if (record.status === 'failed') return unavailable('search_provider_error', failureMessage(record.code), 502);
   const apifyToken = Netlify.env.get('APIFY_TOKEN');
   if (!apifyToken) return unavailable('search_not_configured', 'Live search is not configured.', 503);
   const elapsedMs = now().getTime() - Date.parse(record.createdAt);
   const fail = async (code: string) => {
     console.error(JSON.stringify({ event: 'live_search_failed', requestId, code }));
     try { await records.put({ ...record, status: 'failed', code, completedAt: now().toISOString() }); } catch { /* the failure is already reported to the caller */ }
-    return unavailable('search_provider_error', FAILURE_MESSAGE, 502);
+    return unavailable('search_provider_error', failureMessage(code), 502);
   };
   if (elapsedMs > SEARCH_DEADLINE_MS) return fail('apify_search_deadline');
   try {
