@@ -106,8 +106,8 @@ async function apify<T>(path: string, config: ZillowConfig, init: RequestInit & 
 export async function startZillowRuns(request: LiveSearchRequest, config: ZillowConfig, fetcher: typeof fetch = fetch): Promise<StartedRun[]> {
   const runs: StartedRun[] = [];
   for (const plan of planRuns(request)) {
-    const query = new URLSearchParams({ timeout: String(RUN_TIMEOUT_SECONDS), maxTotalChargeUsd: String(MAX_RUN_CHARGE_USD) });
-    const started = await apify<{ data?: { id?: unknown; defaultDatasetId?: unknown; status?: unknown } }>(`/acts/${ZILLOW_ACTOR}/runs?${query}`, config, { method: "POST", body: JSON.stringify(actorInput(plan, request)) }, fetcher);
+    const query = new URLSearchParams({ timeout: String(RUN_TIMEOUT_SECONDS), maxItems: String(MAX_ITEMS_PER_RUN), maxTotalChargeUsd: String(MAX_RUN_CHARGE_USD) });
+    const started = await apify<{ data?: { id?: unknown; defaultDatasetId?: unknown; status?: unknown } }>(`/actors/${ZILLOW_ACTOR}/runs?${query}`, config, { method: "POST", body: JSON.stringify(actorInput(plan, request)) }, fetcher);
     const id = text(started?.data?.id), datasetId = text(started?.data?.defaultDatasetId);
     if (!id || !datasetId) throw new ProviderError("apify_invalid_payload", "Apify did not return a run identifier");
     runs.push({ id, datasetId, area: plan.label });
