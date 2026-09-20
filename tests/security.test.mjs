@@ -98,10 +98,11 @@ test('drops unknown persisted fields and does not preserve forged verification',
 });
 test('retains valid saves, expires old state, and clears both schema versions',()=>{
  const data=new Map();globalThis.localStorage={getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)};
- const now=Date.now(),state={saved:[listing.id],rejected:[],compare:[listing.id],activeQuery:'loft',liveListings:[listing]};
- assert.equal(persistWorkspace(state,now),true);assert.deepEqual(restoreWorkspace([],now).saved,[listing.id]);
+ const now=Date.now(),state={saved:[listing.id],rejected:[],compare:[listing.id],activeQuery:'loft',activeNeighborhood:'arts district',liveListings:[listing]};
+ assert.equal(persistWorkspace(state,now),true);const restored=restoreWorkspace([],now);assert.deepEqual(restored.saved,[listing.id]);assert.equal(restored.activeNeighborhood,'arts district');assert.equal(restored.activeQuery,'loft');
  assert.equal(restoreWorkspace([],now+31*86400000),null);
- data.set('receiver:workspace:v2',JSON.stringify({version:2,...state}));assert.ok(restoreWorkspace([],now));
+ data.clear();data.set('receiver:workspace:v2',JSON.stringify({version:2,saved:[listing.id],rejected:[listing.id],compare:[listing.id],activeQuery:'loft in Santa Monica',liveListings:[listing]}));
+ const legacy=restoreWorkspace([],now);assert.ok(legacy);assert.deepEqual(legacy.saved,[listing.id]);assert.deepEqual(legacy.compare,[listing.id]);assert.equal(legacy.activeQuery,'');assert.equal(legacy.activeNeighborhood,undefined);assert.equal(legacy.liveListings,null);assert.deepEqual(legacy.rejected,[]);
  assert.ok(clearWorkspace());assert.equal(data.size,0);
  data.set(STORAGE_KEY,'{');assert.equal(restoreWorkspace([],now),null);
 });
