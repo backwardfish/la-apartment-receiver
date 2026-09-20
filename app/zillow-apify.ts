@@ -6,7 +6,7 @@
  * the trusted-origin allowlist (zillow.com, zillowstatic.com).
  *
  * Runs are asynchronous: `startZillowRuns` reserves nothing and starts one
- * actor run per requested area cluster (at most MAX_RUNS); `pollZillowRuns`
+ * bounded actor run for the selected MVP neighborhood; `pollZillowRuns`
  * reports progress and, once every run has succeeded, returns ranked results.
  */
 import type { LiveListing, LiveSearchRequest } from "./live-search.ts";
@@ -16,7 +16,7 @@ import { assessStyle, styleText } from "./style.ts";
 
 export const APIFY_API = "https://api.apify.com/v2";
 export const ZILLOW_ACTOR = "igolaizola~zillow-scraper-ppe";
-/** Actor runs per search; each costs at most MAX_RUN_CHARGE_USD. */
+/** The MVP starts one Actor run per search, capped by MAX_RUN_CHARGE_USD. */
 export const MAX_RUNS = 1;
 export const MAX_ITEMS_PER_RUN = 20;
 export const MAX_RUN_CHARGE_USD = 0.5;
@@ -35,11 +35,7 @@ function record(value: unknown): UnknownRecord | undefined { return value && typ
 function text(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : undefined; }
 function num(value: unknown) { return typeof value === "number" && Number.isFinite(value) ? value : undefined; }
 
-/**
- * One actor run per area cluster. Areas whose circles touch are merged into a
- * single enclosing circle (Arts District + Downtown LA become one run). A brief
- * with no recognised area searches a bounded circle around central LA.
- */
+/** One bounded Actor run for the single structured neighborhood selected by the MVP UI. */
 export function planRuns(request: LiveSearchRequest): Array<{ label: string; latitude: number; longitude: number; radiusMiles: number }> {
   const areas = requestedAreas(request.intent);
   if (areas.length !== 1) throw new ProviderError("invalid_neighborhood_scope", "Zillow MVP searches require exactly one supported neighborhood");
@@ -99,7 +95,7 @@ export async function probeZillowActor(config: ZillowConfig, fetcher: typeof fet
   await apify<unknown>(`/acts/${ZILLOW_ACTOR}`, config, { maxBytes: 500_000 }, fetcher);
 }
 
-/** Start one actor run per planned cluster. Any failure aborts the whole search; the caller keeps its allowance reservation. */
+/** Start the single planned Actor run. Any failure aborts the search; the caller keeps its allowance reservation. */
 export async function startZillowRuns(request: LiveSearchRequest, config: ZillowConfig, fetcher: typeof fetch = fetch): Promise<StartedRun[]> {
   const runs: StartedRun[] = [];
   for (const plan of planRuns(request)) {
