@@ -43,11 +43,18 @@ test('provider selection fails closed unless an explicit supported provider is c
 });
 
 test('cache keys ignore ranking words but change with areas, budget, features, and style', () => {
-  const base = cacheKeyFor(parseSearchIntent('warehouse loft in Arts District under $3,500'));
-  assert.equal(cacheKeyFor(parseSearchIntent('quiet sunny warehouse loft in Arts District under $3,500')), base);
-  assert.notEqual(cacheKeyFor(parseSearchIntent('warehouse loft in Arts District under $3,000')), base);
-  assert.notEqual(cacheKeyFor(parseSearchIntent('warehouse loft in Arts District under $3,500 with parking')), base);
-  assert.notEqual(cacheKeyFor(parseSearchIntent('apartment in Arts District under $3,500')), base);
+  const baseQuery = 'warehouse loft in Arts District under $3,500';
+  const base = cacheKeyFor(parseSearchIntent(baseQuery), baseQuery);
+  const rankedQuery = 'quiet sunny warehouse loft in Arts District under $3,500';
+  assert.equal(cacheKeyFor(parseSearchIntent(rankedQuery), rankedQuery), base);
+  const cheaper = 'warehouse loft in Arts District under $3,000';
+  assert.notEqual(cacheKeyFor(parseSearchIntent(cheaper), cheaper), base);
+  const parking = 'warehouse loft in Arts District under $3,500 with parking';
+  assert.notEqual(cacheKeyFor(parseSearchIntent(parking), parking), base);
+  const apartment = 'apartment in Arts District under $3,500';
+  assert.notEqual(cacheKeyFor(parseSearchIntent(apartment), apartment), base);
+  const warehouseOnly = 'warehouse conversion in Arts District under $3,500';
+  assert.notEqual(cacheKeyFor(parseSearchIntent(warehouseOnly), warehouseOnly), base, 'provider keyword mode changes fetched inventory');
   assert.equal(isFreshRecord({ status: 'done', completedAt: new Date(Date.now() - 5 * 3600_000).toISOString() }), true);
   assert.equal(isFreshRecord({ status: 'done', completedAt: new Date(Date.now() - 7 * 3600_000).toISOString() }), false);
 });
