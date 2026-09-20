@@ -131,7 +131,7 @@ async function zillowSearch(normalized: LiveSearchRequest, requestId: string, un
   }
   try {
     const runs = await startZillowRuns(normalized, { apifyToken }, fetcher);
-    const record: SearchRecord = { version: 2, id: crypto.randomUUID(), createdAt: new Date().toISOString(), query: normalized.query, neighborhood: normalized.neighborhood, provider: 'zillow-apify', cacheKey, runs, status: 'running' };
+    const record: SearchRecord = { version: 2, id: crypto.randomUUID(), createdAt: new Date().toISOString(), query: normalized.query, neighborhood: normalized.neighborhood!, provider: 'zillow-apify', cacheKey, runs, status: 'running' };
     await records.put(record);
     console.info(JSON.stringify({ event: 'live_search_started', requestId, runs: runs.length }));
     return response({ status: 'pending', searchId: record.id, pollAfterMs: POLL_AFTER_MS, provider: ZILLOW_PROVIDER_LABEL, finished: 0, total: runs.length, elapsedMs: 0 }, 202, requestId);
