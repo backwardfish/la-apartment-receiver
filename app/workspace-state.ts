@@ -78,13 +78,15 @@ export function restoreWorkspace(snapshots: PersistedListing[], now=Date.now()):
     const value=JSON.parse(raw);
     if(!value||![2,3,4].includes(value.version))return null;
     if(value.version>=3&&(!finite(value.savedAt)||value.savedAt>now+300000||now-value.savedAt>RETENTION_MS)){clearWorkspace();return null;}
-    const liveListings=sanitizePersistedListings(value.liveListings);
+    const activeNeighborhood=isNeighborhoodKey(value.activeNeighborhood)?value.activeNeighborhood:undefined;
+    const restoredLiveListings=sanitizePersistedListings(value.liveListings);
+    const liveListings=activeNeighborhood?restoredLiveListings:null;
     const retainedListings=sanitizePersistedListings(value.retainedListings)??[];
-    for(const listing of [...(liveListings??[]),...retainedListings])if(listing.capturedAt&&now-Date.parse(listing.capturedAt)>7*86400000)listing.status='stale';
-    const allowed=new Set([...snapshots,...(liveListings??[]),...retainedListings].map(l=>l.id));
+    for(const listing of [...(restoredLiveListings??[]),...retainedListings])if(listing.capturedAt&&now-Date.parse(listing.capturedAt)>7*86400000)listing.status='stale';
+    const allowed=new Set([...snapshots,...(restoredLiveListings??[]),...retainedListings].map(l=>l.id));
     const saved=validWorkspaceIds(value.saved,allowed),compare=validWorkspaceIds(value.compare,allowed,3);
-    const retained=retainWorkspaceListings(retainedListings,[...snapshots,...(liveListings??[])],[...saved,...compare]);
-    return {liveListings,retainedListings:retained,saved,rejected:validWorkspaceIds(value.rejected,allowed),compare,activeQuery:typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):'',activeNeighborhood:isNeighborhoodKey(value.activeNeighborhood)?value.activeNeighborhood:undefined};
+    const retained=retainWorkspaceListings(retainedListings,[...snapshots,...(restoredLiveListings??[])],[...saved,...compare]);
+    return {liveListings,retainedListings:retained,saved,rejected:activeNeighborhood?validWorkspaceIds(value.rejected,allowed):[],compare,activeQuery:activeNeighborhood&&typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):'',activeNeighborhood};
   } catch { clearWorkspace();return null; }
 }
 export function persistWorkspace(workspace: Workspace, now=Date.now()): boolean {
