@@ -1,17 +1,17 @@
 # LA Apartment Receiver
 
-A source-linked Los Angeles rental research workspace. Live searches use Zillow via Apify (or RentCast), require approved HTTPS listing links and images, and keep retrieval time separate from the provider's last-seen time. Every listing still needs an availability check at its original source.
+A source-linked Los Angeles rental research workspace. The LA-only MVP uses a required single-neighborhood selector and Zillow via Apify for live searches. Results require approved HTTPS listing links and images, and retrieval time stays separate from the provider's last-seen time. Every listing still needs an availability check at its original source.
 
 ## Live sources
 
 `LISTING_PROVIDER` chooses the live source:
 
-- `zillow-apify` — Zillow rental listings retrieved through the Apify actor [`igolaizola/zillow-scraper-ppe`](https://apify.com/igolaizola/zillow-scraper-ppe) using `APIFY_TOKEN`. Records carry the exact `zillow.com` listing URL, `zillowstatic.com` photos, the full description (so loft evidence is graded A–D from the listing's own words), coordinates, year built, and days on Zillow. Searches are asynchronous: `POST /api/search` reserves one allowance slot, starts one bounded actor run per requested area cluster (at most 3; 40 records and $0.50 each), and returns `202` with a search id; the browser polls `GET /api/search-status?id=` until the runs finish (typically 10–90 s). A finished search for the same brief is reused for 6 hours without a new run. The server calls only `api.apify.com`; it never fetches listing pages or photos.
-- `rentcast` (default when unset) — kept for compatibility, but see the blocker below.
+- `zillow-apify` — the MVP source. Zillow rental listings are retrieved through the Apify actor [`igolaizola/zillow-scraper-ppe`](https://apify.com/igolaizola/zillow-scraper-ppe) using `APIFY_TOKEN`. The browser submits one canonical neighborhood plus free-text criteria. The server starts exactly one bounded Actor run (20 records, 120 s Actor timeout, $0.50 maximum charge), returns `202`, and the browser polls `GET /api/search-status?id=` until completion. A finished search for the same normalized brief is reused for 6 hours without a new run.
+- `rentcast` — retained only for compatibility/testing. It is never selected implicitly; missing or invalid `LISTING_PROVIDER` fails closed instead of falling back.
 
 > **Known blocker for the RentCast source (confirmed 2026-09-15).** RentCast's published rental-listing schema contains no listing URL, photos, description, or neighborhood ([schema](https://developers.rentcast.io/reference/property-listings-schema)). The adapter's evidence gate therefore rejects every real RentCast record (`tests/providers.test.mjs`, "KNOWN BLOCKER"), and loft/warehouse detection has no text to read. Live search cannot return results until a source that supplies listing links, photos, and descriptions is approved, or the evidence contract is deliberately changed. Do not relax the gate to make a search "work".
 
-Searches name areas, not addresses. Recognised areas (Arts District, Downtown LA, USC, UCLA, Westwood, Silver Lake, …) have approximate centre coordinates; a brief may name several as alternatives ("near UCLA, USC, or the Arts District"). One bounded provider request covers them all, and only listings whose coordinates fall inside a requested area are shown, with the straight-line distance in the evidence. A brief that asks for a loft or warehouse only shows listings whose own description carries that evidence; a short honest list is preferred to a padded one.
+For the MVP, geography is structured rather than inferred from prose. The UI requires one supported LA neighborhood from the shared registry in `app/neighborhoods.ts`; API validation, provider coordinates, post-filtering, display labels, and tests all consume that same registry. Free text is reserved for budget, bedrooms, amenities, and style. A brief that asks for a loft or warehouse only shows listings whose own description carries that evidence; a short honest list is preferred to a padded one.
 
 When live search is unavailable, the interface explicitly labels the research snapshot. A missing Google Routes key permits only the documented Santa Monica neighborhood estimates; their upper bound must meet the requested cutoff. Other commute destinations require Routes. Estimates are labeled without a live-traffic claim.
 
@@ -37,7 +37,7 @@ Netlify Dev's local Blobs server does not return an ETag on reads, and the allow
 - Set `LIVE_SEARCH_ENABLED=false` and redeploy to pause paid provider calls.
 - Shared live-search limits default to 25 per UTC day and 50 per UTC month. The allowance persists across deployments in Netlify Blobs. Invalid settings or unavailable storage block provider calls; failed searches retain their reservation. Optional overrides and provider-call bounds are documented in the runbook.
 - `/release.json` identifies the client build; `/api/health` identifies the function build and actual Node runtime. Both must show the deployed commit.
-- `/api/health?readiness=1` checks allowance-store connectivity without using a search slot or contacting providers. Automatic pull-request previews are disabled to protect shared storage; manually deploy only reviewed preview code.
+- `/api/health?readiness=1` checks both Blob stores without using a search slot. `/api/health?readiness=1&provider=1` additionally verifies the configured Zillow/Apify Actor can be accessed with the hosted token without starting a paid run. Automatic pull-request previews are disabled to protect shared storage; manually deploy only reviewed preview code.
 
 Use protected pull requests to update `main`. See [the release and security runbook](docs/SECURITY_AND_RELEASE.md) for configuration, verification, rollback, and limitations.
 
