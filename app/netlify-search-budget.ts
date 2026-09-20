@@ -12,15 +12,15 @@ async function withinDeadline<T>(operation: () => Promise<T>, signal: AbortSigna
 
 /** No query text, addresses, IPs, or credentials are stored in the allowance record. */
 export function budgetStore(options: { name?: string; siteID?: string; token?: string; fetcher?: typeof fetch; signal?: AbortSignal } = {}): BudgetStore {
+  const deadline = options.signal ?? AbortSignal.timeout(8_000);
   const store = getStore({
     name: options.name ?? 'receiver-search-allowance-v1',
     consistency: 'strong',
     ...(options.siteID ? { siteID: options.siteID } : {}),
     ...(options.token ? { token: options.token } : {}),
     fetch: async (input, init) => {
-      const signal = options.signal ?? AbortSignal.timeout(8_000);
-      if (signal.aborted) throw new SearchBudgetError('search_allowance_unavailable');
-      const result = await (options.fetcher ?? fetch)(input, { ...init, redirect: 'error', signal });
+      if (deadline.aborted) throw new SearchBudgetError('search_allowance_unavailable');
+      const result = await (options.fetcher ?? fetch)(input, { ...init, redirect: 'error', signal: deadline });
       const method = init?.method?.toUpperCase() ?? 'GET';
       // Conditional writes in @netlify/blobs 11.0.3 can swallow non-412 errors.
       if (result.status !== 200 && !(method === 'GET' && result.status === 404) && !(method === 'PUT' && result.status === 412)) {
@@ -30,14 +30,8 @@ export function budgetStore(options: { name?: string; siteID?: string; token?: s
     },
   });
   return {
-    read: () => {
-      const signal = options.signal ?? AbortSignal.timeout(8_000);
-      return withinDeadline(() => store.getWithMetadata('usage', { type: 'json', consistency: 'strong' }), signal);
-    },
-    write: (data, etag) => {
-      const signal = options.signal ?? AbortSignal.timeout(8_000);
-      return withinDeadline(() => store.setJSON('usage', data, etag ? { onlyIfMatch: etag } : { onlyIfNew: true }), signal);
-    },
+    read: () => withinDeadline(() => store.getWithMetadata('usage', { type: 'json', consistency: 'strong' }), deadline),
+    write: (data, etag) => withinDeadline(() => store.setJSON('usage', data, etag ? { onlyIfMatch: etag } : { onlyIfNew: true }), deadline),
   };
 }
 
