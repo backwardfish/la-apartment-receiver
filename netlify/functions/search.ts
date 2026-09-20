@@ -108,7 +108,7 @@ async function zillowSearch(normalized: LiveSearchRequest, requestId: string, un
   const apifyToken = Netlify.env.get('APIFY_TOKEN');
   if (!apifyToken) return unavailable('search_not_configured', 'Live search is not configured. The research snapshot is available below.', 503);
   if (normalized.intent.commute) return unavailable('commute_unavailable', 'Commute limits are not yet supported with the Zillow provider. Try the same search without a drive-time limit.', 503);
-  const cacheKey = cacheKeyFor(normalized.intent);
+  const cacheKey = cacheKeyFor(normalized.intent, normalized.query);
   let records: SearchStore;
   try {
     records = store();
