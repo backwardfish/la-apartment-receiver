@@ -7,6 +7,7 @@ import { reserveNetlifySearch } from '../../app/netlify-search-budget.ts';
 import { SearchBudgetError } from '../../app/search-budget.ts';
 import { cacheKeyFor, isFreshRecord, searchStore, type SearchRecord, type SearchStore } from '../../app/search-records.ts';
 import { startZillowRuns } from '../../app/zillow-apify.ts';
+import { isNeighborhoodKey } from '../../app/neighborhoods.ts';
 
 declare const Netlify: { env: { get(key: string): string | undefined } };
 
@@ -64,6 +65,7 @@ export const createSearchHandler = (reserve = reserveNetlifySearch, store: () =>
   catch (error) { return error instanceof RangeError ? unavailable('payload_too_large', 'The apartment search request is too large.', 413) : unavailable('invalid_request', 'Send a valid apartment search.', 400); }
   if (!payload || typeof payload !== 'object' || !('query' in payload) || typeof payload.query !== 'string') return unavailable('invalid_request', 'A non-empty apartment search is required.', 400);
   const neighborhood = 'neighborhood' in payload ? payload.neighborhood : undefined;
+  if (!isNeighborhoodKey(neighborhood)) return unavailable('invalid_request', 'Choose a supported Los Angeles neighborhood.', 400);
   let normalized: LiveSearchRequest;
   try { normalized = buildLiveSearchRequest(payload.query, neighborhood); }
   catch { return unavailable('invalid_request', 'Choose a supported Los Angeles neighborhood and enter a search between 1 and 500 characters.', 400); }
