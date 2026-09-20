@@ -7,6 +7,7 @@ import { reserveNetlifySearch } from '../../app/netlify-search-budget.ts';
 import { SearchBudgetError } from '../../app/search-budget.ts';
 import { cacheKeyFor, isFreshRecord, searchStore, type SearchRecord, type SearchStore } from '../../app/search-records.ts';
 import { startZillowRuns } from '../../app/zillow-apify.ts';
+import { isNeighborhoodKey } from '../../app/neighborhoods.ts';
 
 declare const Netlify: { env: { get(key: string): string | undefined } };
 
@@ -42,9 +43,11 @@ export async function boundedJson(request: Request): Promise<unknown> {
   } finally { reader.releaseLock(); }
 }
 
-/** `LISTING_PROVIDER` selects the live source. RentCast remains the default so existing deployments do not change behaviour. */
-export function listingProvider(get: (key: string) => string | undefined): 'rentcast' | 'zillow-apify' {
-  return get('LISTING_PROVIDER')?.trim().toLowerCase() === 'zillow-apify' ? 'zillow-apify' : 'rentcast';
+/** `LISTING_PROVIDER` must explicitly select a supported live source; missing/unknown values fail closed. */
+export function listingProvider(get: (key: string) => string | undefined): 'rentcast' | 'zillow-apify' | 'unconfigured' {
+  const value = get('LISTING_PROVIDER')?.trim().toLowerCase();
+  if (value === 'zillow-apify' || value === 'rentcast') return value;
+  return 'unconfigured';
 }
 
 /** A finished record becomes the success envelope; used by both the cache path and the status poller. */
@@ -61,14 +64,17 @@ export const createSearchHandler = (reserve = reserveNetlifySearch, store: () =>
   try { payload = await boundedJson(request); }
   catch (error) { return error instanceof RangeError ? unavailable('payload_too_large', 'The apartment search request is too large.', 413) : unavailable('invalid_request', 'Send a valid apartment search.', 400); }
   if (!payload || typeof payload !== 'object' || !('query' in payload) || typeof payload.query !== 'string') return unavailable('invalid_request', 'A non-empty apartment search is required.', 400);
+  const neighborhood = 'neighborhood' in payload ? payload.neighborhood : undefined;
+  if (!isNeighborhoodKey(neighborhood)) return unavailable('invalid_request', 'Choose a supported Los Angeles neighborhood.', 400);
   let normalized: LiveSearchRequest;
-  try { normalized = buildLiveSearchRequest(payload.query); }
-  catch { return unavailable('invalid_request', 'Enter an apartment search between 1 and 500 characters.', 400); }
+  try { normalized = buildLiveSearchRequest(payload.query, neighborhood); }
+  catch { return unavailable('invalid_request', 'Choose a supported Los Angeles neighborhood and enter a search between 1 and 500 characters.', 400); }
   if (Netlify.env.get('LIVE_SEARCH_ENABLED') !== 'true') {
     console.info(JSON.stringify({ event: 'search_paused', requestId }));
     return unavailable('search_paused', 'Live search is paused. The research snapshot is available below.', 503);
   }
   const provider = listingProvider(key => Netlify.env.get(key));
+  if (provider === 'unconfigured') return unavailable('search_not_configured', 'Live search is not configured for a listing provider.', 503);
   if (provider === 'zillow-apify') return zillowSearch(normalized, requestId, unavailable, reserve, store, fetcher);
 
   const rentCastApiKey = Netlify.env.get('RENTCAST_API_KEY');
@@ -102,7 +108,7 @@ async function zillowSearch(normalized: LiveSearchRequest, requestId: string, un
   const apifyToken = Netlify.env.get('APIFY_TOKEN');
   if (!apifyToken) return unavailable('search_not_configured', 'Live search is not configured. The research snapshot is available below.', 503);
   if (normalized.intent.commute) return unavailable('commute_unavailable', 'Commute limits are not yet supported with the Zillow provider. Try the same search without a drive-time limit.', 503);
-  const cacheKey = cacheKeyFor(normalized.intent);
+  const cacheKey = cacheKeyFor(normalized.intent, normalized.query);
   let records: SearchStore;
   try {
     records = store();
@@ -127,7 +133,7 @@ async function zillowSearch(normalized: LiveSearchRequest, requestId: string, un
   }
   try {
     const runs = await startZillowRuns(normalized, { apifyToken }, fetcher);
-    const record: SearchRecord = { version: 1, id: crypto.randomUUID(), createdAt: new Date().toISOString(), query: normalized.query, provider: 'zillow-apify', cacheKey, runs, status: 'running' };
+    const record: SearchRecord = { version: 2, id: crypto.randomUUID(), createdAt: new Date().toISOString(), query: normalized.query, neighborhood: normalized.neighborhood!, provider: 'zillow-apify', cacheKey, runs, status: 'running' };
     await records.put(record);
     console.info(JSON.stringify({ event: 'live_search_started', requestId, runs: runs.length }));
     return response({ status: 'pending', searchId: record.id, pollAfterMs: POLL_AFTER_MS, provider: ZILLOW_PROVIDER_LABEL, finished: 0, total: runs.length, elapsedMs: 0 }, 202, requestId);

@@ -74,7 +74,7 @@ test("several requested areas share one bounded request and results must fall in
   const arts = results.find(x => x.id === "rentcast:arts");
   assert.equal(arts.area, "Arts District");
   assert.ok(arts.distanceMiles < 0.2);
-  assert.equal(results.find(x => x.id === "rentcast:westwood").area, "UCLA");
+  assert.equal(results.find(x => x.id === "rentcast:westwood").area, "Westwood / UCLA");
 });
 
 test("loft signals outrank generic records for a warehouse brief and nearer listings break ties", async () => {

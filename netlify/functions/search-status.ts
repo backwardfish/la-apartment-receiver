@@ -37,7 +37,7 @@ export const createSearchStatusHandler = (store: () => SearchStore = () => searc
   };
   if (elapsedMs > SEARCH_DEADLINE_MS) return fail('apify_search_deadline');
   try {
-    const poll = await pollZillowRuns(record.runs, buildLiveSearchRequest(record.query), { apifyToken }, fetcher, now());
+    const poll = await pollZillowRuns(record.runs, buildLiveSearchRequest(record.query, record.neighborhood), { apifyToken }, fetcher, now());
     if (poll.status === 'running') return response({ status: 'pending', searchId: record.id, pollAfterMs: POLL_AFTER_MS, provider: ZILLOW_PROVIDER_LABEL, finished: poll.finished, total: poll.total, elapsedMs }, 202, requestId);
     if (poll.status === 'failed') return fail(poll.code);
     const done: SearchRecord = { ...record, status: 'done', results: poll.results, completedAt: now().toISOString(), usageUsd: poll.usageUsd };

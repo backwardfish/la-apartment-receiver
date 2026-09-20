@@ -45,16 +45,18 @@ test("style grading rejects loft-inspired marketing and modern buildings without
   assert.equal(assessStyle("Industrial live/work loft with polished concrete floors and steel windows").grade, "A");
 });
 
-test("plans one bounded actor run per area cluster and merges touching areas", () => {
-  const plans = planRuns(buildLiveSearchRequest("warehouse loft near UCLA, USC, or the Arts District in Downtown LA"));
-  assert.equal(plans.length, 3, "Arts District and Downtown LA share one run");
-  assert.deepEqual(plans.map((plan) => plan.label), ["UCLA", "USC", "Arts District / Downtown LA"]);
-  const input = actorInput(plans[2], buildLiveSearchRequest("warehouse loft in Arts District"));
-  assert.equal(input.operation, "rent"); assert.equal(input.keywords, "loft"); assert.equal(input.fetchDetails, true);
-  assert.ok(input.distanceMiles >= 1 && input.maxItems === MAX_ITEMS_PER_RUN);
-  assert.equal(actorInput(plans[0], buildLiveSearchRequest("two bedroom near UCLA")).keywords, undefined);
-  assert.ok(planRuns(buildLiveSearchRequest("loft in Venice, Silver Lake, Pasadena, Long Beach, and Hollywood")).length <= MAX_RUNS);
-  assert.equal(planRuns(buildLiveSearchRequest("one bedroom under $3,000"))[0].label, "Los Angeles");
+test("plans exactly one bounded actor run for the selected MVP neighborhood", () => {
+  const request = buildLiveSearchRequest("warehouse conversion with exposed brick", "arts district");
+  const plans = planRuns(request);
+  assert.equal(plans.length, 1);
+  assert.deepEqual(plans.map((plan) => plan.label), ["Arts District"]);
+  const broadInput = actorInput(plans[0], request);
+  assert.equal(broadInput.operation, "rent"); assert.equal(broadInput.keywords, undefined); assert.equal(broadInput.fetchDetails, true);
+  assert.ok(broadInput.distanceMiles >= 1 && broadInput.maxItems === MAX_ITEMS_PER_RUN);
+  const loftInput = actorInput(plans[0], buildLiveSearchRequest("warehouse loft under $3,500", "arts district"));
+  assert.equal(loftInput.keywords, "loft");
+  assert.equal(MAX_RUNS, 1);
+  assert.throws(() => planRuns(buildLiveSearchRequest("loft near UCLA, USC, or Arts District")), /exactly one supported neighborhood/);
 });
 
 test("starts runs with a bearer token, never in the URL, and polls to ranked results", async () => {
@@ -66,7 +68,7 @@ test("starts runs with a bearer token, never in the URL, and polls to ranked res
     if (String(url).includes("/datasets/")) return Response.json(sample);
     return new Response("unexpected", { status: 500 });
   };
-  const request = buildLiveSearchRequest("warehouse loft in the Arts District under $3,500");
+  const request = buildLiveSearchRequest("warehouse loft under $3,500", "arts district");
   const runs = await startZillowRuns(request, { apifyToken: "secret-token" }, fetcher);
   assert.equal(runs.length, 1);
   for (const call of calls) { assert.doesNotMatch(call.url, /secret-token/); assert.equal(call.init.headers.authorization, "Bearer secret-token"); assert.equal(call.init.redirect, "error"); }
@@ -82,7 +84,7 @@ test("starts runs with a bearer token, never in the URL, and polls to ranked res
 });
 
 test("reports running, failed, and evidence-less runs distinctly", async () => {
-  const request = buildLiveSearchRequest("loft in Arts District");
+  const request = buildLiveSearchRequest("loft", "arts district");
   const runs = [{ id: "r1", datasetId: "d1", area: "Arts District" }];
   const config = { apifyToken: "t" };
   assert.deepEqual(await pollZillowRuns(runs, request, config, async () => Response.json({ data: { status: "RUNNING" } })), { status: "running", finished: 0, total: 1 });

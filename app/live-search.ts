@@ -1,4 +1,5 @@
 import { parseSearchIntent, type SearchIntent } from "./search-intent.ts";
+import { isNeighborhoodKey, type NeighborhoodKey } from "./neighborhoods.ts";
 
 export type ListingFreshness = "live" | "recent" | "needs-verification" | "stale";
 
@@ -42,6 +43,7 @@ export type LiveListing = {
 
 export type LiveSearchRequest = {
   query: string;
+  neighborhood?: NeighborhoodKey;
   intent: SearchIntent;
 };
 
@@ -73,11 +75,18 @@ export type LiveSearchPending = {
 export type LiveSearchResponse = LiveSearchSuccess | LiveSearchUnavailable | LiveSearchPending;
 export type LiveSearchOutcome = LiveSearchSuccess | LiveSearchUnavailable;
 
-export function buildLiveSearchRequest(query: string): LiveSearchRequest {
+export function buildLiveSearchRequest(query: string, neighborhood?: unknown): LiveSearchRequest {
   const trimmedQuery = query.trim();
   if (!trimmedQuery) throw new Error("Describe the apartment you want before searching.");
   if (trimmedQuery.length > 500) throw new Error("Keep the apartment search under 500 characters.");
-  return { query: trimmedQuery, intent: parseSearchIntent(trimmedQuery) };
+  const parsed = parseSearchIntent(trimmedQuery);
+  if (neighborhood === undefined) return { query: trimmedQuery, intent: parsed };
+  if (!isNeighborhoodKey(neighborhood)) throw new Error("Choose a supported Los Angeles neighborhood.");
+  return {
+    query: trimmedQuery,
+    neighborhood,
+    intent: { ...parsed, locations: [neighborhood], locationQuery: neighborhood },
+  };
 }
 
 export function isLiveSearchResponse(value: unknown): value is LiveSearchResponse {
@@ -99,7 +108,7 @@ export function isLiveSearchResponse(value: unknown): value is LiveSearchRespons
 }
 
 /** Give up on an asynchronous search after this long; the server keeps its own deadline. */
-export const CLIENT_SEARCH_DEADLINE_MS = 150_000;
+export const CLIENT_SEARCH_DEADLINE_MS = 165_000;
 
 export type SearchProgress = { elapsedMs: number; finished?: number; total?: number; provider: string };
 
@@ -110,12 +119,12 @@ async function readEnvelope(response: Response): Promise<LiveSearchResponse> {
   throw new Error("Receiver received an invalid response from the live-search service.");
 }
 
-export async function requestLiveSearch(query: string, signal?: AbortSignal, onProgress?: (progress: SearchProgress) => void, fetcher: typeof fetch = fetch, wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))): Promise<LiveSearchOutcome> {
-  const payload = buildLiveSearchRequest(query);
+export async function requestLiveSearch(query: string, neighborhood: NeighborhoodKey, signal?: AbortSignal, onProgress?: (progress: SearchProgress) => void, fetcher: typeof fetch = fetch, wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))): Promise<LiveSearchOutcome> {
+  const payload = buildLiveSearchRequest(query, neighborhood);
   const response = await fetcher("/api/search", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ query: payload.query, neighborhood: payload.neighborhood }),
     signal,
   });
   let envelope = await readEnvelope(response);

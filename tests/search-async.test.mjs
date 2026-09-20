@@ -9,7 +9,7 @@ import { requestLiveSearch } from '../app/live-search.ts';
 
 const sample = JSON.parse(await readFile(new URL('./fixtures/zillow-apify-sample.json', import.meta.url), 'utf8'));
 const context = { requestId: 'test-request' };
-const post = (query) => new Request('https://receiver.test/api/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }) });
+const post = (query, neighborhood = 'arts district') => new Request('https://receiver.test/api/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query, neighborhood }) });
 const status = (id) => new Request(`https://receiver.test/api/search-status?id=${id}`);
 const env = (overrides = {}) => { globalThis.Netlify = { env: { get: (key) => ({ LIVE_SEARCH_ENABLED: 'true', LISTING_PROVIDER: 'zillow-apify', APIFY_TOKEN: 'apify-secret', ...overrides })[key] } }; };
 
@@ -35,20 +35,40 @@ function apifyFetcher(state = { runStatus: 'RUNNING', items: sample }) {
   return { fetcher, calls, state };
 }
 
-test('provider selection defaults to RentCast and only an exact zillow-apify value switches', () => {
-  assert.equal(listingProvider(() => undefined), 'rentcast');
+test('provider selection fails closed unless an explicit supported provider is configured', () => {
+  assert.equal(listingProvider(() => undefined), 'unconfigured');
   assert.equal(listingProvider(() => 'Zillow-Apify '), 'zillow-apify');
-  assert.equal(listingProvider(() => 'zillow'), 'rentcast');
+  assert.equal(listingProvider(() => 'rentcast'), 'rentcast');
+  assert.equal(listingProvider(() => 'zillow'), 'unconfigured');
 });
 
 test('cache keys ignore ranking words but change with areas, budget, features, and style', () => {
-  const base = cacheKeyFor(parseSearchIntent('warehouse loft in Arts District under $3,500'));
-  assert.equal(cacheKeyFor(parseSearchIntent('quiet sunny warehouse loft in Arts District under $3,500')), base);
-  assert.notEqual(cacheKeyFor(parseSearchIntent('warehouse loft in Arts District under $3,000')), base);
-  assert.notEqual(cacheKeyFor(parseSearchIntent('warehouse loft in Arts District under $3,500 with parking')), base);
-  assert.notEqual(cacheKeyFor(parseSearchIntent('apartment in Arts District under $3,500')), base);
+  const baseQuery = 'warehouse loft in Arts District under $3,500';
+  const base = cacheKeyFor(parseSearchIntent(baseQuery), baseQuery);
+  const rankedQuery = 'quiet sunny warehouse loft in Arts District under $3,500';
+  assert.equal(cacheKeyFor(parseSearchIntent(rankedQuery), rankedQuery), base);
+  const cheaper = 'warehouse loft in Arts District under $3,000';
+  assert.notEqual(cacheKeyFor(parseSearchIntent(cheaper), cheaper), base);
+  const parking = 'warehouse loft in Arts District under $3,500 with parking';
+  assert.notEqual(cacheKeyFor(parseSearchIntent(parking), parking), base);
+  const apartment = 'apartment in Arts District under $3,500';
+  assert.notEqual(cacheKeyFor(parseSearchIntent(apartment), apartment), base);
+  const warehouseOnly = 'warehouse conversion in Arts District under $3,500';
+  assert.notEqual(cacheKeyFor(parseSearchIntent(warehouseOnly), warehouseOnly), base, 'provider keyword mode changes fetched inventory');
   assert.equal(isFreshRecord({ status: 'done', completedAt: new Date(Date.now() - 5 * 3600_000).toISOString() }), true);
   assert.equal(isFreshRecord({ status: 'done', completedAt: new Date(Date.now() - 7 * 3600_000).toISOString() }), false);
+});
+
+test('the search API requires a supported MVP neighborhood before reserving paid work', async (t) => {
+  env();
+  t.mock.method(console, 'info', () => {}); t.mock.method(console, 'error', () => {});
+  let reservations = 0;
+  const search = createSearchHandler(async () => { reservations++; }, () => memoryStore().store, async () => { throw new Error('no provider call expected'); });
+  const missing = await search(new Request('https://receiver.test/api/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: 'loft' }) }), context);
+  assert.equal(missing.status, 400);
+  const invalid = await search(post('loft', 'not-a-neighborhood'), context);
+  assert.equal(invalid.status, 400);
+  assert.equal(reservations, 0);
 });
 
 test('zillow search reserves once, starts runs with the token in a header, returns 202, then resolves to ranked results and caches them', async (t) => {
@@ -126,12 +146,12 @@ test('the browser client follows a pending search to its result and gives up aft
       : Response.json({ status: 'ok', query: 'loft', searchedAt: new Date().toISOString(), provider: 'Zillow via Apify', results: [] });
   };
   const progress = [];
-  const outcome = await requestLiveSearch('loft in Arts District', undefined, (p) => progress.push(p), fetcher, async () => {});
+  const outcome = await requestLiveSearch('loft', 'arts district', undefined, (p) => progress.push(p), fetcher, async () => {});
   assert.equal(outcome.status, 'ok'); assert.equal(polls, 3); assert.ok(progress.length >= 3);
   let now = 0;
   const clock = { now: () => now };
   const forever = async () => Response.json({ status: 'pending', searchId: '11111111-2222-4333-8444-555555555555', pollAfterMs: 1, provider: 'Zillow via Apify' }, { status: 202 });
   const realNow = Date.now; Date.now = () => (now += 60_000);
-  try { const timeout = await requestLiveSearch('loft', undefined, undefined, forever, async () => {}); assert.equal(timeout.code, 'search_timeout'); }
+  try { const timeout = await requestLiveSearch('loft', 'arts district', undefined, undefined, forever, async () => {}); assert.equal(timeout.code, 'search_timeout'); }
   finally { Date.now = realNow; void clock; }
 });

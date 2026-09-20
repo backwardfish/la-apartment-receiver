@@ -83,7 +83,7 @@ test('the overall storage deadline rejects even if a transport stalls', async ()
 });
 
 test('budget rejection and outage prevent provider calls and return safe, distinct errors', async t => {
-  globalThis.Netlify = { env: { get: key => key === 'LIVE_SEARCH_ENABLED' ? 'true' : key === 'RENTCAST_API_KEY' ? 'test' : undefined } };
+  globalThis.Netlify = { env: { get: key => key === 'LIVE_SEARCH_ENABLED' ? 'true' : key === 'LISTING_PROVIDER' ? 'rentcast' : key === 'RENTCAST_API_KEY' ? 'test' : undefined } };
   let providerCalls = 0;
   t.mock.method(globalThis, 'fetch', async () => { providerCalls++; throw Error('provider should not run'); });
   t.mock.method(console, 'error', () => {});
@@ -92,7 +92,7 @@ test('budget rejection and outage prevent provider calls and return safe, distin
     [Error('private credential error'), 503, 'search_allowance_unavailable'],
   ]) {
     const handler = createSearchHandler(async () => { throw error; });
-    const result = await handler(new Request('https://receiver.test/api/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: 'loft' }) }), { requestId: 'test-id' });
+    const result = await handler(new Request('https://receiver.test/api/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: 'loft', neighborhood: 'arts district' }) }), { requestId: 'test-id' });
     assert.equal(result.status, status);
     assert.equal((await result.json()).code, code);
     if (status === 429) assert.equal(result.headers.get('retry-after'), '60');
@@ -103,7 +103,7 @@ test('budget rejection and outage prevent provider calls and return safe, distin
 test('paused, invalid and unconfigured requests do not consume the shared allowance', async () => {
   let reservations = 0;
   const handler = createSearchHandler(async () => { reservations++; });
-  const request = query => new Request('https://receiver.test/api/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }) });
+  const request = query => new Request('https://receiver.test/api/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query, neighborhood: 'arts district' }) });
   globalThis.Netlify = { env: { get: () => undefined } };
   assert.equal((await handler(request(''), {})).status, 400);
   assert.equal((await handler(request('loft'), {})).status, 503);
@@ -115,11 +115,11 @@ test('paused, invalid and unconfigured requests do not consume the shared allowa
 test('failed provider calls still consume a reservation', async t => {
   const connect = sharedStore();
   const handler = createSearchHandler(() => reserveSearch(connect(), { daily: 1, monthly: 1 }, now));
-  globalThis.Netlify = { env: { get: key => key === 'LIVE_SEARCH_ENABLED' ? 'true' : key === 'RENTCAST_API_KEY' ? 'test' : undefined } };
+  globalThis.Netlify = { env: { get: key => key === 'LIVE_SEARCH_ENABLED' ? 'true' : key === 'LISTING_PROVIDER' ? 'rentcast' : key === 'RENTCAST_API_KEY' ? 'test' : undefined } };
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async () => { calls++; return new Response('private provider error', { status: 503 }); });
   t.mock.method(console, 'error', () => {});
-  const request = () => new Request('https://receiver.test/api/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"query":"loft"}' });
+  const request = () => new Request('https://receiver.test/api/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"query":"loft","neighborhood":"arts district"}' });
   assert.equal((await handler(request(), {})).status, 502);
   assert.equal((await handler(request(), {})).status, 429);
   assert.equal(calls, 1);

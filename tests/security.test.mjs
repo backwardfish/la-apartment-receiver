@@ -20,7 +20,7 @@ test('only explicit enablement can reach credentials or reserve paid work', asyn
   t.mock.method(console,'info',()=>{});
   for(const value of [undefined,'','false','TRUE','true ','1']) {
     globalThis.Netlify={env:{get:key=>{assert.equal(key,'LIVE_SEARCH_ENABLED');return value;}}};
-    const result=await guarded(req({query:'one bedroom'}),context);
+    const result=await guarded(req({query:'one bedroom',neighborhood:'arts district'}),context);
     assert.equal(result.status,503);
     assert.equal((await result.json()).code,'search_paused');
   }
@@ -50,27 +50,27 @@ test('rejects unsafe, deceptive, credential-bearing, and unapproved URLs',()=>{
  assert.equal(trustedUrl('https://images.cdn.appfolio.com/active.svg','images'),undefined);
 });
 test('enforces real streamed bytes even when Content-Length is absent or false',async()=>{
- for(const headers of [{},{'content-length':'1'}])assert.equal((await handler(req(JSON.stringify({query:'a',padding:'a'.repeat(21000)}),headers),context)).status,413);
+ for(const headers of [{},{'content-length':'1'}])assert.equal((await handler(req(JSON.stringify({query:'a',neighborhood:'arts district',padding:'a'.repeat(21000)}),headers),context)).status,413);
 });
 test('rejects malformed/empty/long queries and media types without calling providers',async()=>{
  globalThis.Netlify={env:{get:()=>{throw Error('Secrets should not be read');}}};
  for(const body of ['{',{query:''},{query:'a'.repeat(501)},{query:2},[]])assert.equal((await handler(req(body),context)).status,400);
- assert.equal((await handler(req({query:'loft'},{'content-type':'text/plain'}),context)).status,415);
+ assert.equal((await handler(req({query:'loft',neighborhood:'arts district'},{'content-type':'text/plain'}),context)).status,415);
  assert.equal((await handler(new Request('https://receiver.test/api/search'),context)).status,405);
 });
 test('fails safely for absent credentials, paused searches, and unsupported commutes',async()=>{
  globalThis.Netlify={env:{get:()=>undefined}};
- const missing=await handler(req({query:'loft'}),context);assert.equal(missing.status,503);assert.doesNotMatch(await missing.text(),/RENTCAST_API_KEY/);
+ const missing=await handler(req({query:'loft',neighborhood:'arts district'}),context);assert.equal(missing.status,503);assert.doesNotMatch(await missing.text(),/RENTCAST_API_KEY/);
  globalThis.Netlify={env:{get:key=>key==='LIVE_SEARCH_ENABLED'?'false':'test'}};
- assert.equal((await (await handler(req({query:'loft'}),context)).json()).code,'search_paused');
- globalThis.Netlify={env:{get:key=>key==='LIVE_SEARCH_ENABLED'?'true':key==='RENTCAST_API_KEY'?'test':undefined}};
- assert.equal((await handler(req({query:'loft within 30 minutes of Pasadena'}),context)).status,503);
+ assert.equal((await (await handler(req({query:'loft',neighborhood:'arts district'}),context)).json()).code,'search_paused');
+ globalThis.Netlify={env:{get:key=>key==='LIVE_SEARCH_ENABLED'?'true':key==='LISTING_PROVIDER'?'rentcast':key==='RENTCAST_API_KEY'?'test':undefined}};
+ assert.equal((await handler(req({query:'loft within 30 minutes of Pasadena',neighborhood:'arts district'}),context)).status,503);
 });
 test('logs only fixed categories and does not echo secret-bearing errors',async(t)=>{
- globalThis.Netlify={env:{get:key=>key==='LIVE_SEARCH_ENABLED'?'true':key==='RENTCAST_API_KEY'?'test':undefined}};
+ globalThis.Netlify={env:{get:key=>key==='LIVE_SEARCH_ENABLED'?'true':key==='LISTING_PROVIDER'?'rentcast':key==='RENTCAST_API_KEY'?'test':undefined}};
  const logs=[];t.mock.method(console,'error',line=>logs.push(line));t.mock.method(globalThis,'fetch',async()=>{throw Error('sensitive-key https://private.test/?token=abc');});
  const providerHandler=createSearchHandler(async()=>{});
- const response=await providerHandler(req({query:'loft'}),context);assert.equal(response.status,502);
+ const response=await providerHandler(req({query:'loft',neighborhood:'arts district'}),context);assert.equal(response.status,502);
  assert.match(response.headers.get('x-receiver-release'),/^[a-f0-9]{40}$/);
  assert.doesNotMatch(JSON.stringify(logs)+await response.text(),/sensitive-key|private.test|token=abc|RENTCAST/);
 });
@@ -98,10 +98,11 @@ test('drops unknown persisted fields and does not preserve forged verification',
 });
 test('retains valid saves, expires old state, and clears both schema versions',()=>{
  const data=new Map();globalThis.localStorage={getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)};
- const now=Date.now(),state={saved:[listing.id],rejected:[],compare:[listing.id],activeQuery:'loft',liveListings:[listing]};
- assert.equal(persistWorkspace(state,now),true);assert.deepEqual(restoreWorkspace([],now).saved,[listing.id]);
+ const now=Date.now(),state={saved:[listing.id],rejected:[],compare:[listing.id],activeQuery:'loft',activeNeighborhood:'arts district',liveListings:[listing]};
+ assert.equal(persistWorkspace(state,now),true);const restored=restoreWorkspace([],now);assert.deepEqual(restored.saved,[listing.id]);assert.equal(restored.activeNeighborhood,'arts district');assert.equal(restored.activeQuery,'loft');
  assert.equal(restoreWorkspace([],now+31*86400000),null);
- data.set('receiver:workspace:v2',JSON.stringify({version:2,...state}));assert.ok(restoreWorkspace([],now));
+ data.clear();data.set('receiver:workspace:v2',JSON.stringify({version:2,saved:[listing.id],rejected:[listing.id],compare:[listing.id],activeQuery:'loft in Santa Monica',liveListings:[listing]}));
+ const legacy=restoreWorkspace([],now);assert.ok(legacy);assert.deepEqual(legacy.saved,[listing.id]);assert.deepEqual(legacy.compare,[listing.id]);assert.equal(legacy.activeQuery,'');assert.equal(legacy.activeNeighborhood,undefined);assert.equal(legacy.liveListings,null);assert.deepEqual(legacy.rejected,[]);
  assert.ok(clearWorkspace());assert.equal(data.size,0);
  data.set(STORAGE_KEY,'{');assert.equal(restoreWorkspace([],now),null);
 });
@@ -118,14 +119,14 @@ test('portable runner propagates success/failure and kills hung processes',async
 });
 test('client gives a useful message for platform rate limiting',async(t)=>{
  t.mock.method(globalThis,'fetch',async()=>new Response('Too many requests',{status:429}));
- const result=await requestLiveSearch('loft');assert.equal(result.code,'rate_limited');
+ const result=await requestLiveSearch('loft','arts district');assert.equal(result.code,'rate_limited');
 });
 test('client preserves the shared allowance explanation and does not claim a one-minute reset',async(t)=>{
  const body={status:'unavailable',code:'search_allowance_exhausted',message:'The shared live-search allowance has been reached. Please try again after it resets.'};
  t.mock.method(globalThis,'fetch',async()=>Response.json(body,{status:429}));
- assert.deepEqual(await requestLiveSearch('loft'),body);
+ assert.deepEqual(await requestLiveSearch('loft','arts district'),body);
 });
 test('client rejects successful-looking data returned with a failed HTTP status',async(t)=>{
  t.mock.method(globalThis,'fetch',async()=>Response.json({status:'ok',query:'loft',searchedAt:new Date().toISOString(),results:[],provider:'test'},{status:502}));
- await assert.rejects(requestLiveSearch('loft'),/invalid response/);
+ await assert.rejects(requestLiveSearch('loft','arts district'),/invalid response/);
 });
