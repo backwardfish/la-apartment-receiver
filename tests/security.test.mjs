@@ -62,7 +62,7 @@ test('fails safely for absent credentials, paused searches, and unsupported comm
  globalThis.Netlify={env:{get:()=>undefined}};
  const missing=await handler(req({query:'loft',neighborhood:'arts district'}),context);assert.equal(missing.status,503);assert.doesNotMatch(await missing.text(),/RENTCAST_API_KEY/);
  globalThis.Netlify={env:{get:key=>key==='LIVE_SEARCH_ENABLED'?'false':'test'}};
- assert.equal((await (await handler(req({query:'loft'}),context)).json()).code,'search_paused');
+ assert.equal((await (await handler(req({query:'loft',neighborhood:'arts district'}),context)).json()).code,'search_paused');
  globalThis.Netlify={env:{get:key=>key==='LIVE_SEARCH_ENABLED'?'true':key==='LISTING_PROVIDER'?'rentcast':key==='RENTCAST_API_KEY'?'test':undefined}};
  assert.equal((await handler(req({query:'loft within 30 minutes of Pasadena',neighborhood:'arts district'}),context)).status,503);
 });
@@ -70,7 +70,7 @@ test('logs only fixed categories and does not echo secret-bearing errors',async(
  globalThis.Netlify={env:{get:key=>key==='LIVE_SEARCH_ENABLED'?'true':key==='LISTING_PROVIDER'?'rentcast':key==='RENTCAST_API_KEY'?'test':undefined}};
  const logs=[];t.mock.method(console,'error',line=>logs.push(line));t.mock.method(globalThis,'fetch',async()=>{throw Error('sensitive-key https://private.test/?token=abc');});
  const providerHandler=createSearchHandler(async()=>{});
- const response=await providerHandler(req({query:'loft'}),context);assert.equal(response.status,502);
+ const response=await providerHandler(req({query:'loft',neighborhood:'arts district'}),context);assert.equal(response.status,502);
  assert.match(response.headers.get('x-receiver-release'),/^[a-f0-9]{40}$/);
  assert.doesNotMatch(JSON.stringify(logs)+await response.text(),/sensitive-key|private.test|token=abc|RENTCAST/);
 });
