@@ -1,4 +1,5 @@
 import { trustedUrl } from './security-urls.ts';
+import { isNeighborhoodKey, type NeighborhoodKey } from './neighborhoods.ts';
 
 export type PersistedListing = {
   id: string; title: string; neighborhood: string; city: string;
@@ -13,6 +14,7 @@ export type PersistedListing = {
 };
 export type Workspace = {
   saved: string[]; rejected: string[]; compare: string[]; activeQuery: string;
+  activeNeighborhood?: NeighborhoodKey;
   liveListings: PersistedListing[] | null;
   retainedListings?: PersistedListing[];
 };
@@ -82,7 +84,7 @@ export function restoreWorkspace(snapshots: PersistedListing[], now=Date.now()):
     const allowed=new Set([...snapshots,...(liveListings??[]),...retainedListings].map(l=>l.id));
     const saved=validWorkspaceIds(value.saved,allowed),compare=validWorkspaceIds(value.compare,allowed,3);
     const retained=retainWorkspaceListings(retainedListings,[...snapshots,...(liveListings??[])],[...saved,...compare]);
-    return {liveListings,retainedListings:retained,saved,rejected:validWorkspaceIds(value.rejected,allowed),compare,activeQuery:typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):''};
+    return {liveListings,retainedListings:retained,saved,rejected:validWorkspaceIds(value.rejected,allowed),compare,activeQuery:typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):'',activeNeighborhood:isNeighborhoodKey(value.activeNeighborhood)?value.activeNeighborhood:undefined};
   } catch { clearWorkspace();return null; }
 }
 export function persistWorkspace(workspace: Workspace, now=Date.now()): boolean {
@@ -90,7 +92,7 @@ export function persistWorkspace(workspace: Workspace, now=Date.now()): boolean 
     const liveListings=sanitizePersistedListings(workspace.liveListings);
     const saved=workspace.saved.slice(0,100),compare=workspace.compare.slice(0,3);
     const retainedListings=retainWorkspaceListings(workspace.retainedListings??[],liveListings??[],[...saved,...compare]);
-    const clean={version:4,savedAt:now,saved,rejected:workspace.rejected.slice(0,100),compare,activeQuery:workspace.activeQuery.slice(0,500),liveListings,retainedListings};
+    const clean={version:4,savedAt:now,saved,rejected:workspace.rejected.slice(0,100),compare,activeQuery:workspace.activeQuery.slice(0,500),activeNeighborhood:isNeighborhoodKey(workspace.activeNeighborhood)?workspace.activeNeighborhood:undefined,liveListings,retainedListings};
     const raw=JSON.stringify(clean);if(new TextEncoder().encode(raw).length>MAX_BYTES)return false;
     const s=storage();if(!s)return false;s.setItem(STORAGE_KEY,raw);for(const key of LEGACY_KEYS)s.removeItem(key);return true;
   } catch { return false; }
