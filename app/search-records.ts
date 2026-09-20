@@ -40,13 +40,14 @@ export const SEARCH_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 /** Stable key for "the same brief": areas, budget, bedrooms, features, style, commute. Free-text ranking words do not change what is fetched. */
-export function cacheKeyFor(intent: SearchIntent): string {
+export function cacheKeyFor(intent: SearchIntent, query = ""): string {
   const canonical = JSON.stringify({
     locations: [...intent.locations].sort(),
     maxRent: intent.maxRent ?? null,
     minBedrooms: intent.minBedrooms ?? null,
     features: [...intent.requiredFeatures].sort(),
     warehouseStyle: intent.warehouseStyle,
+    providerKeyword: /\blofts?\b/i.test(query) ? "loft" : null,
     commute: intent.commute ?? null,
   });
   return createHash('sha256').update(canonical).digest('hex').slice(0, 32);
