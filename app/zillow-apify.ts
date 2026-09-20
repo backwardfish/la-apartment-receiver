@@ -17,12 +17,12 @@ import { assessStyle, styleText } from "./style.ts";
 export const APIFY_API = "https://api.apify.com/v2";
 export const ZILLOW_ACTOR = "igolaizola~zillow-scraper-ppe";
 /** Actor runs per search; each costs at most MAX_RUN_CHARGE_USD. */
-export const MAX_RUNS = 3;
-export const MAX_ITEMS_PER_RUN = 40;
+export const MAX_RUNS = 1;
+export const MAX_ITEMS_PER_RUN = 20;
 export const MAX_RUN_CHARGE_USD = 0.5;
-export const RUN_TIMEOUT_SECONDS = 240;
+export const RUN_TIMEOUT_SECONDS = 120;
 /** Wall-clock limit for a whole search before it is reported as failed. */
-export const SEARCH_DEADLINE_MS = 180_000;
+export const SEARCH_DEADLINE_MS = 150_000;
 const ITEMS_BYTE_CAP = 2_000_000;
 const RUN_TERMINAL = new Set(["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT", "TIMING-OUT", "ABORTING"]);
 
@@ -42,17 +42,9 @@ function num(value: unknown) { return typeof value === "number" && Number.isFini
  */
 export function planRuns(request: LiveSearchRequest): Array<{ label: string; latitude: number; longitude: number; radiusMiles: number }> {
   const areas = requestedAreas(request.intent);
-  if (areas.length === 0) return [{ label: "Los Angeles", ...LA_CENTER, radiusMiles: 10 }];
-  const clusters: AreaCenter[][] = [];
-  for (const area of areas) {
-    // Merge only when one centre sits inside the other's radius (Arts District inside Downtown LA), not on any overlap (USC vs Downtown).
-    const cluster = clusters.find((members) => members.some((member) => distanceMiles(member, area) <= Math.max(member.radiusMiles, area.radiusMiles)));
-    if (cluster) cluster.push(area); else clusters.push([area]);
-  }
-  return clusters.slice(0, MAX_RUNS).map((members) => {
-    const circle = enclosingCircle(members) ?? { ...members[0], radiusMiles: members[0].radiusMiles };
-    return { label: members.map((member) => member.label).join(" / "), latitude: circle.latitude, longitude: circle.longitude, radiusMiles: circle.radiusMiles };
-  });
+  if (areas.length !== 1) throw new ProviderError("invalid_neighborhood_scope", "Zillow MVP searches require exactly one supported neighborhood");
+  const area = areas[0];
+  return [{ label: area.label, latitude: area.latitude, longitude: area.longitude, radiusMiles: area.radiusMiles }];
 }
 
 export function actorInput(plan: ReturnType<typeof planRuns>[number], request: LiveSearchRequest): ActorInput {
@@ -66,9 +58,9 @@ export function actorInput(plan: ReturnType<typeof planRuns>[number], request: L
     fetchDetails: true,
     space: "entirePlace",
   };
-  // Zillow's keyword filter searches listing text; "loft" is the cheapest way to
-  // avoid paying for generic inventory on a warehouse brief.
-  if (request.intent.warehouseStyle) input.keywords = "loft";
+  // Use the provider keyword filter only when the user explicitly asks for a loft.
+  // Broader industrial/warehouse intent is graded from listing evidence after retrieval.
+  if (/\blofts?\b/i.test(request.query)) input.keywords = "loft";
   if (request.intent.minBedrooms !== undefined && request.intent.minBedrooms > 0) input.minBeds = request.intent.minBedrooms;
   return input;
 }
