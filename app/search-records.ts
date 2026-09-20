@@ -4,7 +4,7 @@ import type { LiveListing } from './live-search.ts';
 import type { SearchIntent } from './search-intent.ts';
 import { ProviderError } from './providers.ts';
 import type { StartedRun } from './zillow-apify.ts';
-import { isNeighborhoodKey } from './neighborhoods.ts';
+import { isNeighborhoodKey, type NeighborhoodKey } from './neighborhoods.ts';
 
 /**
  * Durable records for asynchronous live searches. A record holds the provider
@@ -17,7 +17,7 @@ export type SearchRecord = {
   id: string;
   createdAt: string;
   query: string;
-  neighborhood: string;
+  neighborhood: NeighborhoodKey;
   provider: 'zillow-apify';
   cacheKey: string;
   runs: StartedRun[];
