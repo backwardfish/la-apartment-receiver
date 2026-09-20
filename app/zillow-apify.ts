@@ -94,6 +94,11 @@ async function apify<T>(path: string, config: ZillowConfig, init: RequestInit & 
   } finally { reader.releaseLock(); }
 }
 
+/** Zero-cost readiness probe: verifies the configured token can read the selected Actor. */
+export async function probeZillowActor(config: ZillowConfig, fetcher: typeof fetch = fetch): Promise<void> {
+  await apify<unknown>(`/acts/${ZILLOW_ACTOR}`, config, { maxBytes: 500_000 }, fetcher);
+}
+
 /** Start one actor run per planned cluster. Any failure aborts the whole search; the caller keeps its allowance reservation. */
 export async function startZillowRuns(request: LiveSearchRequest, config: ZillowConfig, fetcher: typeof fetch = fetch): Promise<StartedRun[]> {
   const runs: StartedRun[] = [];
