@@ -4,6 +4,7 @@ import type { LiveListing } from './live-search.ts';
 import type { SearchIntent } from './search-intent.ts';
 import { ProviderError } from './providers.ts';
 import type { StartedRun } from './zillow-apify.ts';
+import { isNeighborhoodKey } from './neighborhoods.ts';
 
 /**
  * Durable records for asynchronous live searches. A record holds the provider
@@ -75,7 +76,7 @@ export function searchStore(options: { name?: string; siteID?: string; token?: s
   const record = (value: unknown): SearchRecord | null => {
     if (!value || typeof value !== 'object') return null;
     const candidate = value as SearchRecord;
-    if (candidate.version !== 2 || !SEARCH_ID_PATTERN.test(candidate.id) || typeof candidate.query !== 'string' || typeof candidate.neighborhood !== 'string' || !Array.isArray(candidate.runs) || !['running', 'done', 'failed'].includes(candidate.status)) return null;
+    if (candidate.version !== 2 || !SEARCH_ID_PATTERN.test(candidate.id) || typeof candidate.query !== 'string' || !isNeighborhoodKey(candidate.neighborhood) || !Array.isArray(candidate.runs) || !['running', 'done', 'failed'].includes(candidate.status)) return null;
     return candidate;
   };
   return {
