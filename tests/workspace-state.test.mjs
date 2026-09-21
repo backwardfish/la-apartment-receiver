@@ -19,6 +19,22 @@ test("drops malformed persisted listing objects", () => {
   assert.deepEqual(sanitizePersistedListings([{ ...listing, sourceUrl: 42 }]), []);
 });
 
+test("preserves only trusted, unique gallery URLs with the primary image first", () => {
+  const secondImage = "https://images.cdn.appfolio.com/second.jpg";
+  const [clean] = sanitizePersistedListings([{...listing, images:[secondImage, listing.image, "https://evil.test/image.jpg", secondImage]}]);
+  assert.deepEqual(clean.images, [listing.image, secondImage]);
+});
+
+test("live galleries survive workspace persistence and reload", () => {
+  const data = new Map();
+  globalThis.localStorage = { getItem: key => data.get(key) ?? null, setItem: (key,value) => data.set(key,value), removeItem: key => data.delete(key) };
+  const images = [listing.image, "https://images.cdn.appfolio.com/gallery.jpg"];
+  assert.ok(persistWorkspace({saved:[],compare:[],rejected:[],activeQuery:"loft",activeNeighborhood:"arts district",liveListings:[{...listing,images}]}));
+  assert.deepEqual(restoreWorkspace([]).liveListings[0].images, images);
+  clearWorkspace();
+  delete globalThis.localStorage;
+});
+
 test("keeps live saved and compare ids when the restored listing exists", () => {
   const allowed = new Set(["rentcast:live-1", "snapshot-1"]);
   assert.deepEqual(validWorkspaceIds(["rentcast:live-1", "missing", "rentcast:live-1"], allowed), ["rentcast:live-1"]);
@@ -28,7 +44,7 @@ test("keeps live saved and compare ids when the restored listing exists", () => 
 test('saved evidence and archetype ranking survive replacing results, pause fallback, and reload', () => {
   const data = new Map();
   globalThis.localStorage = { getItem: key => data.get(key) ?? null, setItem: (key,value) => data.set(key,value), removeItem: key => data.delete(key) };
-  const original = {...listing, title:'101 Main Street', warehouseSignals:['Industrial conversion']};
+  const original = {...listing, title:'101 Main Street', images:[listing.image,'https://images.cdn.appfolio.com/gallery.jpg'], warehouseSignals:['Industrial conversion']};
   const retainedListings = retainWorkspaceListings([], [original], [original.id]);
   for (const liveListings of [[], null, [{...listing,id:'rentcast:new'}]]) {
     assert.ok(persistWorkspace({saved:[original.id],compare:[original.id],rejected:[],activeQuery:'a different search',liveListings,retainedListings}));
@@ -36,6 +52,7 @@ test('saved evidence and archetype ranking survive replacing results, pause fall
     assert.deepEqual(restored.saved,[original.id]);
     assert.deepEqual(restored.compare,[original.id]);
     assert.equal(restored.retainedListings[0].sourceUrl, original.sourceUrl);
+    assert.deepEqual(restored.retainedListings[0].images, original.images);
     assert.deepEqual(scoreBachelorPad(restored.retainedListings[0]), scoreBachelorPad(original));
   }
   clearWorkspace();
