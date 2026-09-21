@@ -164,7 +164,10 @@ export function normalizeZillowListing(item: unknown, now = new Date()): LiveLis
   const beds = num(root.bedrooms), baths = num(root.bathrooms);
   const sourceUrl = trustedUrl(root.hdpUrl, "sources") ?? trustedUrl(root.url, "sources");
   const photos = record(media?.allPropertyPhotos);
-  const image = trustedUrl(record(media?.propertyPhotoLinks)?.highResolutionLink, "images") ?? (Array.isArray(photos?.highResolution) ? photos.highResolution.map((value) => trustedUrl(value, "images")).find(Boolean) : undefined);
+  const primaryImage = trustedUrl(record(media?.propertyPhotoLinks)?.highResolutionLink, "images");
+  const galleryImages = Array.isArray(photos?.highResolution) ? photos.highResolution.map((value) => trustedUrl(value, "images")).filter((value): value is string => Boolean(value)) : [];
+  const images = [...new Set([primaryImage, ...galleryImages].filter((value): value is string => Boolean(value)))].slice(0, 30);
+  const image = images[0];
   if (!zpid || !Number.isFinite(zpid) || !street || !city || rent === undefined || rent <= 0 || beds === undefined || baths === undefined || beds < 0 || baths < 0 || !sourceUrl || !image) return null;
   if (rental?.isRoomForRent === true) return null;
   const resoFacts = record(details?.resoFacts);
@@ -188,6 +191,7 @@ export function normalizeZillowListing(item: unknown, now = new Date()): LiveLis
     source: text(record(details?.attributionInfo)?.brokerName) ? `Zillow · ${text(record(details?.attributionInfo)?.brokerName)}` : "Zillow",
     sourceUrl,
     image,
+    images,
     features: detectFeatures([description ?? "", ...facts].join(" ")),
     // The listing was active on Zillow at scrape time; that is the last-seen moment.
     freshness: status === "FOR_RENT" ? "live" : "needs-verification",

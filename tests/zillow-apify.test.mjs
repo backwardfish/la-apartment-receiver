@@ -17,6 +17,9 @@ test("normalises a real Zillow row with an exact listing URL, zillowstatic photo
   assert.equal(hewitt.id, "zillow:122236602");
   assert.equal(hewitt.sourceUrl, "https://www.zillow.com/homedetails/130-S-Hewitt-St-APT-31-Los-Angeles-CA-90012/122236602_zpid/");
   assert.match(hewitt.image, /^https:\/\/photos\.zillowstatic\.com\//);
+  assert.ok(Array.isArray(hewitt.images) && hewitt.images.length >= 1);
+  assert.equal(hewitt.images[0], hewitt.image);
+  assert.ok(hewitt.images.every((url) => /^https:\/\/photos\.zillowstatic\.com\//.test(url)));
   assert.equal(hewitt.rent, 3000); assert.equal(hewitt.beds, 1); assert.equal(hewitt.sqft, 1201); assert.equal(hewitt.yearBuilt, 1936);
   assert.equal(hewitt.styleGrade, "A", hewitt.warehouseSignals.join(","));
   assert.ok(hewitt.warehouseSignals.includes("Concrete") && hewitt.warehouseSignals.includes("High ceilings") && hewitt.warehouseSignals.includes("Built 1936"));

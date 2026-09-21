@@ -130,8 +130,11 @@ export function normalizeRentCastListing(value: unknown, now = new Date()): Live
   const record = value as UnknownRecord; const rent = number(record.price); const address = listingAddress(record); const id = text(record.id); const city = text(record.city); const listingUrl = exactSourceUrl(record);
   if (!id || !address || !city || rent === undefined || rent <= 0 || !listingUrl || number(record.bedrooms) === undefined || number(record.bathrooms) === undefined || Number(record.bedrooms) < 0 || Number(record.bathrooms) < 0) return null;
   const lastSeen = dateValue(record.lastSeenDate); const freshnessDate = lastSeen;
-  const image = trustedUrl(record.imageUrl, "images") ?? (Array.isArray(record.photos) ? record.photos.map(value => trustedUrl(value, "images")).find(Boolean) : undefined); if (!image) return null;
-  return { id: `rentcast:${id}`, title: text(record.addressLine1) ?? address, neighborhood: text(record.neighborhood) ?? city, city, rent, beds: number(record.bedrooms) ?? 0, baths: number(record.bathrooms) ?? 1, sqft: number(record.squareFootage), available: text(record.status) === "Active" ? "Listed as active" : text(record.status), source: nestedText(record.listingOffice, "name") ?? "RentCast feed", sourceUrl: listingUrl, image, features: features(record), freshness: freshness(freshnessDate, now), capturedAt: now.toISOString(), lastSeenAt: lastSeen?.toISOString(), yearBuilt: number(record.yearBuilt), ...styleFields(style(record)) };
+  const primaryImage = trustedUrl(record.imageUrl, "images");
+  const galleryImages = Array.isArray(record.photos) ? record.photos.map(value => trustedUrl(value, "images")).filter((value): value is string => Boolean(value)) : [];
+  const images = [...new Set([primaryImage, ...galleryImages].filter((value): value is string => Boolean(value)))].slice(0, 30);
+  const image = images[0]; if (!image) return null;
+  return { id: `rentcast:${id}`, title: text(record.addressLine1) ?? address, neighborhood: text(record.neighborhood) ?? city, city, rent, beds: number(record.bedrooms) ?? 0, baths: number(record.bathrooms) ?? 1, sqft: number(record.squareFootage), available: text(record.status) === "Active" ? "Listed as active" : text(record.status), source: nestedText(record.listingOffice, "name") ?? "RentCast feed", sourceUrl: listingUrl, image, images, features: features(record), freshness: freshness(freshnessDate, now), capturedAt: now.toISOString(), lastSeenAt: lastSeen?.toISOString(), yearBuilt: number(record.yearBuilt), ...styleFields(style(record)) };
 }
 
 function titleCase(value: string) { return value.replace(/\b\w/g, (letter) => letter.toUpperCase()); }

@@ -4,7 +4,7 @@ import { isNeighborhoodKey, type NeighborhoodKey } from './neighborhoods.ts';
 export type PersistedListing = {
   id: string; title: string; neighborhood: string; city: string;
   rent: number; beds: number; baths: number; sqft?: number;
-  available: string; source: string; sourceUrl: string; image: string;
+  available: string; source: string; sourceUrl: string; image: string; images?: string[];
   features: string[]; status: 'verified' | 'needs-verification' | 'stale';
   capturedAt?: string; lastSeenAt?: string; fit: number;
   why: string[]; unknowns: string[]; redFlags: string[];
@@ -40,6 +40,9 @@ export function sanitizePersistedListings(value: unknown): PersistedListing[] | 
     ids.add(String(l.id));
     // Reconstruct an allowlist; never persist unknown provider fields, tokens, or account data.
     const clean: PersistedListing = {id:String(l.id), title:String(l.title), neighborhood:String(l.neighborhood), city:String(l.city), rent:l.rent, beds:l.beds, baths:l.baths, available:String(l.available), source:String(l.source), sourceUrl,image,features:l.features,status:l.status==='stale'?'stale':'needs-verification',fit:Math.min(l.fit,99),why:l.why,unknowns:l.unknowns,redFlags:l.redFlags};
+    if (Array.isArray(l.images)) {
+      clean.images = [...new Set([image, ...l.images.slice(0, 30).map(value => trustedUrl(value, 'images')).filter((value): value is string => Boolean(value))])].slice(0, 30);
+    }
     if (finite(l.sqft)) clean.sqft = l.sqft;
     const capturedAt=timestamp(l.capturedAt),lastSeenAt=timestamp(l.lastSeenAt);
     if(capturedAt)clean.capturedAt=capturedAt;
