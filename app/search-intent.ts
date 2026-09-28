@@ -1,5 +1,8 @@
 export type SearchIntent = {
   raw: string;
+  /** Minimum monthly rent, when the brief sets a lower price bound. */
+  minRent?: number;
+  /** Maximum monthly rent, when the brief sets an upper price bound. */
   maxRent?: number;
   minBedrooms?: number;
   requiredFeatures: string[];
@@ -40,9 +43,9 @@ const FEATURE_ALIASES: Record<string, string[]> = {
 
 const STOP_WORDS = new Set([
   "a", "an", "and", "apartment", "apartments", "around", "at", "be", "bed",
-  "bedroom", "bedrooms", "br", "eight", "feel", "find", "five", "for", "four", "home", "i", "ideally", "in", "is", "kind", "like", "looking",
-  "max", "maximum", "me", "month", "near", "of", "or", "place", "please", "plus", "preferably",
-  "nine", "one", "rent", "rental", "rentals", "seven", "show", "six", "something", "the",
+  "bedroom", "bedrooms", "br", "eight", "feel", "between", "from", "find", "five", "for", "four", "home", "i", "ideally", "in", "is", "kind", "like", "looking",
+  "max", "maximum", "over", "more", "than", "me", "month", "near", "of", "or", "place", "please", "plus", "preferably", "price",
+  "nine", "one", "rent", "rental", "rentals", "minimum", "minimums", "min", "least", "above", "below", "starting", "seven", "show", "six", "something", "the",
   "three", "to", "two", "type", "under", "up", "vibe", "want", "with",
 ]);
 
@@ -164,10 +167,16 @@ export function parseSearchIntent(raw: string): SearchIntent {
   // A commute destination is not the requested neighborhood. Keep the search
   // broad enough to include both sides of the commute cutoff.
   const locationInput = commute ? normalized.replace(/\b(?:within|under|less than|up to|no more than)\s+(?:(?:an?|one)\s+hour'?s?|[\d]+\s*(?:minutes?|mins?|hours?|hrs?))\s*(?:drive|driving)?\s*(?:of|from|to)\s+[a-z][a-z\s'-]*?(?=[,.;!?]|$)/, ' ') : normalized;
-  const rentMatch = normalized.match(
-    /(?:under|up to|max(?:imum)?(?: of)?)\s*\$?\s*([\d,]{3,})|\$\s*([\d,]{3,})\s*(?:max|maximum|or less|and under)?/,
-  );
-  const rentValue = rentMatch?.[1] ?? rentMatch?.[2];
+  const rentRange = normalized.match(/\b(?:between|from)\s*\$?\s*([\d,]{3,})\s*(?:and|to|[-–])\s*\$?\s*([\d,]{3,})/);
+  const minRentMatch = normalized.match(/\b(?:at\s+least|more\s+than|no\s+less\s+than|minimum(?:\s+(?:rent|price))?(?:\s+of)?|min(?:imum)?(?:\s+(?:rent|price))?(?:\s+of)?|above|over|starting\s+at)\s*\$?\s*([\d,]{3,})|\$\s*([\d,]{3,})\s*(?:minimum|min)\b/);
+  const maxRentMatch = normalized.match(/\b(?:under|below|up\s+to|max(?:imum)?(?:\s+of)?|no\s+more\s+than)\s*\$?\s*([\d,]{3,})|\$\s*([\d,]{3,})\s*(?:max|maximum|or\s+less|and\s+under)\b/);
+  // A bare dollar amount kept its historical upper-bound meaning. Once the
+  // brief explicitly sets a lower bound, it must not also become the maximum.
+  const bareRentMatch = !rentRange && !minRentMatch && !maxRentMatch
+    ? normalized.match(/\$\s*([\d,]{3,})|\b(?:max|maximum)\s+(?:of\s+)?\$?([\d,]{3,})/)
+    : null;
+  const minRent = rentRange?.[1] ?? minRentMatch?.[1] ?? minRentMatch?.[2];
+  const maxRent = rentRange?.[2] ?? maxRentMatch?.[1] ?? maxRentMatch?.[2] ?? bareRentMatch?.[1] ?? bareRentMatch?.[2];
   const bedroomMatch = normalized.match(/\b(\d+)\s*(?:\+|plus)?\s*(?:bed(?:room)?s?|br)\b/);
   const wordBedroomMatch = normalized.match(/\b(one|two|three|four|five)\s*(?:-|\s)*(?:bed(?:room)?s?|br)\b/);
   const locationMatch = locationInput.match(/\b(?:in|near|around)\s+([a-z][a-z\s'-]*?)(?=\s+(?:under|up to|max(?:imum)?|with|and|for)\b|[,.;!?]|$)/);
@@ -223,7 +232,8 @@ export function parseSearchIntent(raw: string): SearchIntent {
 
   return {
     raw: raw.trim(),
-    maxRent: rentValue ? Number(rentValue.replaceAll(",", "")) : undefined,
+    minRent: minRent ? Number(minRent.replaceAll(",", "")) : undefined,
+    maxRent: maxRent ? Number(maxRent.replaceAll(",", "")) : undefined,
     minBedrooms: /\bstudio\b/.test(normalized)
       ? 0
       : bedroomMatch
@@ -275,6 +285,7 @@ export function tailorListings<T extends IntentListing>(listings: T[], intent: S
     !intent.warehouseStyle || hasWarehouseEvidence(`${listing.title} ${listing.features.join(" ")} ${(listing as { warehouseSignals?: string[] }).warehouseSignals?.join(" ") ?? ""}`);
 
   return listings
+    .filter((listing) => intent.minRent === undefined || listing.rent >= intent.minRent)
     .filter((listing) => intent.maxRent === undefined || listing.rent <= intent.maxRent)
     .filter((listing) => intent.minBedrooms === undefined || listing.beds >= intent.minBedrooms)
     .filter((listing) =>
@@ -304,6 +315,7 @@ export function displayArea(key: string): string {
 
 export function describeSearchIntent(intent: SearchIntent): string {
   const parts: string[] = [];
+  if (intent.minRent !== undefined) parts.push(`at least $${intent.minRent.toLocaleString("en-US")}`);
   if (intent.maxRent !== undefined) parts.push(`up to $${intent.maxRent.toLocaleString("en-US")}`);
   if (intent.minBedrooms !== undefined) {
     parts.push(intent.minBedrooms === 0 ? "studio or larger" : `${intent.minBedrooms}+ bedroom`);

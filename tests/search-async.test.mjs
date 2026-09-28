@@ -49,6 +49,8 @@ test('cache keys include ranking words as well as areas, budget, features, and s
   assert.notEqual(cacheKeyFor(parseSearchIntent(rankedQuery), rankedQuery), base);
   const cheaper = 'warehouse loft in Arts District under $3,000';
   assert.notEqual(cacheKeyFor(parseSearchIntent(cheaper), cheaper), base);
+  const minimum = 'warehouse loft in Arts District above $2,500 under $3,500';
+  assert.notEqual(cacheKeyFor(parseSearchIntent(minimum), minimum), base);
   const parking = 'warehouse loft in Arts District under $3,500 with parking';
   assert.notEqual(cacheKeyFor(parseSearchIntent(parking), parking), base);
   const apartment = 'apartment in Arts District under $3,500';
