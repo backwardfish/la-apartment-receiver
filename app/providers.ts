@@ -149,7 +149,7 @@ export function buildRentCastUrl(request: LiveSearchRequest) {
   else if (intent.locationQuery && requestedAreas(intent).length === 0) { url.searchParams.set("address", `${titleCase(intent.locationQuery)}, Los Angeles, CA`); url.searchParams.set("radius", "3"); }
   else setCircle(LA_CENTER, 40);
   url.searchParams.set("status", "Active"); url.searchParams.set("propertyType", "Apartment|Condo|Multi-Family|Townhouse");
-  if (intent.maxRent !== undefined) url.searchParams.set("price", `0:${intent.maxRent}`);
+  if (intent.minRent !== undefined || intent.maxRent !== undefined) url.searchParams.set("price", `${intent.minRent ?? 0}:${intent.maxRent ?? "*"}`);
   if (intent.minBedrooms !== undefined) url.searchParams.set("bedrooms", `${intent.minBedrooms}:*`);
   url.searchParams.set("limit", String(MAX_PROVIDER_RECORDS)); return url;
 }
@@ -174,7 +174,7 @@ export function rankCandidates(input: Candidate[], request: LiveSearchRequest): 
   const areas = requestedAreas(request.intent); const geoFilter = areas.length > 0 && !singleCity(request.intent);
   return input
     .filter((item): item is Candidate & { listing: LiveListing } => item.listing !== null)
-    .filter(({ listing }) => (request.intent.maxRent === undefined || listing.rent <= request.intent.maxRent) && (request.intent.minBedrooms === undefined || listing.beds >= request.intent.minBedrooms))
+    .filter(({ listing }) => (request.intent.minRent === undefined || listing.rent >= request.intent.minRent) && (request.intent.maxRent === undefined || listing.rent <= request.intent.maxRent) && (request.intent.minBedrooms === undefined || listing.beds >= request.intent.minBedrooms))
     .filter(({ listing }) => request.intent.requiredFeatures.every((feature) => listing.features.includes(feature)))
     // A loft brief excludes records with no loft evidence at all; weak evidence (grade C) stays but ranks last.
     .filter(({ listing }) => !request.intent.warehouseStyle || (listing.warehouseSignals.length > 0 && listing.styleGrade !== "D"))

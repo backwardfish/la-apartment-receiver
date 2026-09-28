@@ -117,3 +117,42 @@ test("a loft brief hides generic snapshot listings instead of ranking them as st
   assert.deepEqual(tailorListings(snapshot, parseSearchIntent("loft in Arts District")), []);
   assert.equal(tailorListings(snapshot, parseSearchIntent("parking")).length, 3);
 });
+
+
+test("parses a minimum monthly rent without treating it as a maximum", () => {
+  for (const brief of [
+    "one bedroom in Koreatown at least $2,500",
+    "one bedroom in Koreatown minimum rent $2,500",
+    "one bedroom in Koreatown min price $2,500",
+    "one bedroom in Koreatown over $2,500",
+    "one bedroom in Koreatown more than $2,500",
+    "one bedroom in Koreatown $2,500 minimum",
+  ]) {
+    const intent = parseSearchIntent(brief);
+    assert.equal(intent.minRent, 2500, brief);
+    assert.equal(intent.maxRent, undefined, brief);
+    assert.deepEqual(intent.searchTerms, [], brief);
+  }
+});
+
+test("parses an inclusive monthly rent range and preserves maximum-only wording", () => {
+  for (const brief of ["between $2,500 and $4,000", "from $2,500 to $4,000", "from 2500-4000"]) {
+    const intent = parseSearchIntent(brief);
+    assert.equal(intent.minRent, 2500, brief);
+    assert.equal(intent.maxRent, 4000, brief);
+  }
+  assert.deepEqual([parseSearchIntent("under $2,800").minRent, parseSearchIntent("under $2,800").maxRent], [undefined,2800]);
+  assert.deepEqual([parseSearchIntent("$2,800").minRent, parseSearchIntent("$2,800").maxRent], [undefined,2800]);
+  assert.match(describeSearchIntent(parseSearchIntent("at least $2,500 under $4,000")), /at least \$2,500.*up to \$4,000/);
+});
+
+test("minimum rent filters snapshot listings and combines with budget and features", () => {
+  const intent = parseSearchIntent("at least $2,500 under $3,000 with parking");
+  const listings = [
+    {title:"Low",neighborhood:"Koreatown",city:"Los Angeles",rent:2499,beds:1,features:["Parking"]},
+    {title:"Match",neighborhood:"Koreatown",city:"Los Angeles",rent:2500,beds:1,features:["Parking"]},
+    {title:"High",neighborhood:"Koreatown",city:"Los Angeles",rent:3001,beds:1,features:["Parking"]},
+    {title:"Missing amenity",neighborhood:"Koreatown",city:"Los Angeles",rent:2700,beds:1,features:[]},
+  ];
+  assert.deepEqual(tailorListings(listings,intent).map(x=>x.title),["Match"]);
+});

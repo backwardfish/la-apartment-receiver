@@ -46,6 +46,7 @@ export function cacheKeyFor(intent: SearchIntent, query = ""): string {
     searchTerms: [...intent.searchTerms].sort(),
     bachelorPad: intent.bachelorPad,
     preferredRegions: [...intent.preferredRegions].sort(),
+    minRent: intent.minRent ?? null,
     maxRent: intent.maxRent ?? null,
     minBedrooms: intent.minBedrooms ?? null,
     features: [...intent.requiredFeatures].sort(),

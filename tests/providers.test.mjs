@@ -98,3 +98,18 @@ test("a street name like Industrial St is not loft evidence; only the listing's 
   assert.deepEqual(onIndustrialStreet.warehouseSignals, []);
   assert.deepEqual(normalizeRentCastListing({ ...sample, description: "Converted warehouse loft" }).warehouseSignals, ["Loft", "Industrial conversion"]);
 });
+
+
+test("sends inclusive minimum and maximum rent bounds to provider queries and filters records",async()=>{
+ const request=buildLiveSearchRequest("one bedroom between $2,500 and $4,000 in Arts District");
+ const url=buildRentCastUrl(request);
+ assert.equal(url.searchParams.get("price"),"2500:4000");
+ const results=await searchRentCast(request,{rentCastApiKey:"test"},async()=>Response.json([
+   {...sample,id:"below",price:2499},{...sample,id:"min",price:2500},{...sample,id:"top",price:4000},{...sample,id:"above",price:4001}
+ ]));
+ assert.deepEqual(results.map(x=>x.id),["rentcast:min","rentcast:top"]);
+ const minOnly=buildRentCastUrl(buildLiveSearchRequest("rent above $2,500"));
+ assert.equal(minOnly.searchParams.get("price"),"2500:*");
+ const maxOnly=buildRentCastUrl(buildLiveSearchRequest("under $4,000"));
+ assert.equal(maxOnly.searchParams.get("price"),"0:4000");
+});
