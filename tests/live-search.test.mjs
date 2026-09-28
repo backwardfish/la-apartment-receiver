@@ -23,3 +23,15 @@ test("accepts only the expected live-search response envelope", () => {
   assert.equal(isLiveSearchResponse({ status: "ok", query: "loft", searchedAt: "2026-08-18T00:00:00.000Z", provider: "test", results: [] }), true);
   assert.equal(isLiveSearchResponse({ status: "ok", results: [] }), false);
 });
+
+
+test("structured multi-area requests override prose, canonicalize order, and enforce the limit", () => {
+  const request = buildLiveSearchRequest("loft in Hollywood", ["koreatown", "arts district"]);
+  assert.deepEqual(request.neighborhoods, ["arts district", "koreatown"]);
+  assert.deepEqual(request.intent.locations, request.neighborhoods);
+  assert.equal(request.neighborhood, undefined);
+  for (const areas of [[], ["arts district", "arts district"], ["hollywood", "not-real"], ["hollywood", "koreatown", "arts district", "ucla", "usc", "venice"], null]) {
+    assert.throws(() => buildLiveSearchRequest("loft", areas), /1 to 5 distinct supported/);
+  }
+  assert.deepEqual(buildLiveSearchRequest("loft", ["arts district"]).intent, buildLiveSearchRequest("loft", "arts district").intent);
+});

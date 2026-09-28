@@ -83,3 +83,27 @@ test('retained listings use refreshed evidence, drop unselected records, and sti
   assert.deepEqual(retainWorkspaceListings([listing],[],[]),[]);
   assert.deepEqual(retainWorkspaceListings([],[{...listing,image:'https://evil.test/image.jpg'}],[listing.id]),[]);
 });
+
+
+test('multi-area workspaces round-trip and v4 single-area searches migrate without losing saved evidence', () => {
+  const data = new Map();
+  globalThis.localStorage = { getItem: key => data.get(key) ?? null, setItem: (key,value) => data.set(key,value), removeItem: key => data.delete(key) };
+  try {
+    const workspace = { saved:[listing.id], compare:[listing.id], rejected:[], activeQuery:'loft', activeNeighborhoods:['koreatown','arts district'], liveListings:[listing] };
+    assert.ok(persistWorkspace(workspace));
+    assert.deepEqual(restoreWorkspace([]).activeNeighborhoods, ['arts district','koreatown']);
+    assert.equal(restoreWorkspace([]).liveListings.length, 1);
+    clearWorkspace();
+    data.set('receiver:workspace:v4', JSON.stringify({ ...workspace, version:4, savedAt:Date.now(), activeNeighborhood:'arts district', activeNeighborhoods:undefined }));
+    const migrated = restoreWorkspace([]);
+    assert.deepEqual(migrated.activeNeighborhoods, ['arts district']);
+    assert.deepEqual(migrated.saved, [listing.id]);
+    assert.ok(persistWorkspace(migrated));
+    assert.ok(!data.has('receiver:workspace:v4'));
+    const corrupted = JSON.parse(data.get(STORAGE_KEY));
+    corrupted.activeNeighborhoods = ['not-real'];
+    data.set(STORAGE_KEY, JSON.stringify(corrupted));
+    assert.equal(restoreWorkspace([]).liveListings, null);
+    assert.deepEqual(restoreWorkspace([]).saved, [listing.id]);
+  } finally { delete globalThis.localStorage; }
+});

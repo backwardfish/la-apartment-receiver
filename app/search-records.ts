@@ -4,7 +4,7 @@ import type { LiveListing } from './live-search.ts';
 import type { SearchIntent } from './search-intent.ts';
 import { ProviderError } from './providers.ts';
 import type { StartedRun } from './zillow-apify.ts';
-import { isNeighborhoodKey, type NeighborhoodKey } from './neighborhoods.ts';
+import { isNeighborhoodKey, isNeighborhoodSelection, type NeighborhoodKey } from './neighborhoods.ts';
 
 /**
  * Durable records for asynchronous live searches. A record holds the provider
@@ -13,11 +13,9 @@ import { isNeighborhoodKey, type NeighborhoodKey } from './neighborhoods.ts';
  * no credentials, IPs, or account data; the query text is what the user typed.
  */
 export type SearchRecord = {
-  version: 2;
   id: string;
   createdAt: string;
   query: string;
-  neighborhood: NeighborhoodKey;
   provider: 'zillow-apify';
   cacheKey: string;
   runs: StartedRun[];
@@ -26,7 +24,8 @@ export type SearchRecord = {
   code?: string;
   completedAt?: string;
   usageUsd?: number;
-};
+} & ({ version: 2; neighborhood: NeighborhoodKey; neighborhoods?: never }
+  | { version: 3; neighborhoods: NeighborhoodKey[]; neighborhood?: never });
 
 export type SearchStore = {
   get(id: string): Promise<SearchRecord | null>;
@@ -39,10 +38,14 @@ export const SEARCH_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 /** Completed searches for the same normalised brief are reused for this long. */
 export const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
-/** Stable key for "the same brief": areas, budget, bedrooms, features, style, commute. Free-text ranking words do not change what is fetched. */
+/** Cache complete ranked results only for the same normalized scope and ranking intent. */
 export function cacheKeyFor(intent: SearchIntent, query = ""): string {
   const canonical = JSON.stringify({
-    locations: [...intent.locations].sort(),
+    version: 3,
+    locations: [...new Set(intent.locations)].sort(),
+    searchTerms: [...intent.searchTerms].sort(),
+    bachelorPad: intent.bachelorPad,
+    preferredRegions: [...intent.preferredRegions].sort(),
     maxRent: intent.maxRent ?? null,
     minBedrooms: intent.minBedrooms ?? null,
     features: [...intent.requiredFeatures].sort(),
@@ -55,6 +58,13 @@ export function cacheKeyFor(intent: SearchIntent, query = ""): string {
 
 export function isFreshRecord(record: SearchRecord, now = Date.now()): boolean {
   return record.status === 'done' && !!record.completedAt && now - Date.parse(record.completedAt) < CACHE_TTL_MS;
+}
+
+export function readSearchRecord(value: unknown): SearchRecord | null {
+    if (!value || typeof value !== 'object') return null;
+    const candidate = value as SearchRecord;
+    if (![2, 3].includes(candidate.version) || !SEARCH_ID_PATTERN.test(candidate.id) || typeof candidate.query !== 'string' || !(candidate.version === 2 ? isNeighborhoodKey(candidate.neighborhood) : isNeighborhoodSelection(candidate.neighborhoods)) || !Array.isArray(candidate.runs) || !['running', 'done', 'failed'].includes(candidate.status)) return null;
+    return candidate;
 }
 
 function unavailable(): never { throw new ProviderError('search_store_unavailable', 'Search storage is unavailable'); }
@@ -74,14 +84,9 @@ export function searchStore(options: { name?: string; siteID?: string; token?: s
       return result;
     },
   });
-  const record = (value: unknown): SearchRecord | null => {
-    if (!value || typeof value !== 'object') return null;
-    const candidate = value as SearchRecord;
-    if (candidate.version !== 2 || !SEARCH_ID_PATTERN.test(candidate.id) || typeof candidate.query !== 'string' || !isNeighborhoodKey(candidate.neighborhood) || !Array.isArray(candidate.runs) || !['running', 'done', 'failed'].includes(candidate.status)) return null;
-    return candidate;
-  };
+
   return {
-    get: async (id) => record(await store.get(`search/${id}`, { type: 'json', consistency: 'strong' })),
+    get: async (id) => readSearchRecord(await store.get(`search/${id}`, { type: 'json', consistency: 'strong' })),
     put: async (value) => { await store.setJSON(`search/${value.id}`, value); },
     cachedSearchId: async (cacheKey) => {
       const value = await store.get(`cache/${cacheKey}`, { type: 'json', consistency: 'strong' }) as { searchId?: unknown } | null;

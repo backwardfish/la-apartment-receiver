@@ -51,8 +51,14 @@ h1 em { color: var(--green); font-style: italic; }
 .intent-search:focus-within { border-color: #9bb7a7; box-shadow: 0 16px 45px rgba(37,67,52,.13), 0 0 0 3px rgba(74,126,97,.08); }
 .neighborhood-field { display: grid; gap: 6px; align-self: stretch; padding-right: 14px; border-right: 1px solid #e1e7e1; }
 .neighborhood-field span { color: #91a098; font-size: 8px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-.neighborhood-field select { width: 100%; min-height: 38px; padding: 7px 28px 7px 9px; border: 1px solid #dce4dc; border-radius: 8px; outline: 0; background: #f6f8f3; color: #334b40; font-size: 11px; font-weight: 700; }
-.neighborhood-field select:focus { border-color: #9bb7a7; }
+.neighborhood-field summary { cursor: pointer; padding: 8px; border: 1px solid #dce4dc; border-radius: 8px; background: #f6f8f3; color: #334b40; }
+.neighborhood-field summary strong { display: block; margin-top: 6px; font-size: 12px; line-height: 1.5; }
+.neighborhood-field summary:focus-visible { outline: 2px solid #4a7e61; outline-offset: 2px; }
+.neighborhood-options { max-height: 240px; overflow-y: auto; margin: 6px 0 0; padding: 8px; border: 1px solid #dce4dc; border-radius: 8px; }
+.neighborhood-options legend { color: #52685a; font-size: 11px; padding: 0 4px; }
+.neighborhood-options label { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: 12px; cursor: pointer; }
+.neighborhood-options input { width: 16px; height: 16px; accent-color: #334b40; }
+.neighborhood-options label:has(input:disabled) { opacity: .6; }
 .intent-search textarea { width: 100%; min-height: 58px; padding: 8px 0; resize: none; border: 0; outline: 0; background: transparent; color: var(--ink); font: 400 clamp(17px, 1.7vw, 23px)/1.35 Georgia, serif; }
 .intent-search textarea::placeholder { color: #a4afa8; }
 .intent-search button { display: inline-flex; align-items: center; gap: 16px; min-height: 50px; padding: 0 18px; border: 0; border-radius: 10px; background: var(--ink); color: white; font-size: 11px; font-weight: 700; white-space: nowrap; }

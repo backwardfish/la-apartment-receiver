@@ -35,9 +35,9 @@ export function budgetStore(options: { name?: string; siteID?: string; token?: s
   };
 }
 
-export async function reserveNetlifySearch(get: (key: string) => string | undefined) {
+export async function reserveNetlifySearch(get: (key: string) => string | undefined, units = 1) {
   try {
-    await reserveSearch(budgetStore(), searchLimits(get));
+    await reserveSearch(budgetStore(), searchLimits(get), undefined, units);
   } catch (error) {
     if (error instanceof SearchBudgetError) throw error;
     throw new SearchBudgetError('search_allowance_unavailable');

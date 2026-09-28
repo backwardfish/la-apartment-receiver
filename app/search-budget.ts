@@ -45,10 +45,10 @@ function readCounter(value: unknown, day: string): Counter {
   return counter;
 }
 
-/** Reserve before provider I/O. Failed searches retain their reservation because they may be billed. */
-export async function reserveSearch(store: BudgetStore, limits: SearchLimits = DEFAULT_SEARCH_LIMITS, now = () => new Date()) {
+/** Atomically reserve one unit per planned provider run before provider I/O. Failed searches retain their reservation because they may be billed. */
+export async function reserveSearch(store: BudgetStore, limits: SearchLimits = DEFAULT_SEARCH_LIMITS, now = () => new Date(), units = 1) {
   try {
-    for (const limit of [limits.daily, limits.monthly]) {
+    for (const limit of [limits.daily, limits.monthly, units]) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new SearchBudgetError('search_allowance_unavailable');
     }
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -60,13 +60,13 @@ export async function reserveSearch(store: BudgetStore, limits: SearchLimits = D
       const previous = existing ? readCounter(existing.data, day) : null;
       const daily = previous?.day === day ? previous.daily : 0;
       const monthly = previous?.month === month ? previous.monthly : 0;
-      if (daily >= limits.daily || monthly >= limits.monthly) {
-        const reset = monthly >= limits.monthly
+      if (daily + units > limits.daily || monthly + units > limits.monthly) {
+        const reset = monthly + units > limits.monthly
           ? Date.UTC(current.getUTCFullYear(), current.getUTCMonth() + 1, 1)
           : Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate() + 1);
         throw new SearchBudgetError('search_allowance_exhausted', Math.max(1, Math.ceil((reset - current.getTime()) / 1000)));
       }
-      const written = await store.write({ version: 1, day, month, daily: daily + 1, monthly: monthly + 1 }, existing?.etag);
+      const written = await store.write({ version: 1, day, month, daily: daily + units, monthly: monthly + units }, existing?.etag);
       if (written.modified) {
         // Also reject the SDK's historical false-success result for failed conditional writes.
         if (!written.etag) throw new SearchBudgetError('search_allowance_unavailable');

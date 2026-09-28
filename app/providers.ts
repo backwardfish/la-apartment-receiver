@@ -1,3 +1,4 @@
+import { scoreFit } from "./fit.ts";
 import { trustedUrl } from "./security-urls.ts";
 import type { LiveListing, LiveSearchRequest, ListingFreshness } from "./live-search.ts";
 import { estimateCommuteToSantaMonica, estimatePassesLimit, isSantaMonicaCommute } from "./commute-estimates.ts";
@@ -169,6 +170,7 @@ const GRADE_WEIGHT = { A: 6, B: 4, C: 1, D: 0 } as const;
  */
 export function rankCandidates(input: Candidate[], request: LiveSearchRequest): Array<Candidate & { listing: LiveListing }> {
   const seen = new Set<string>();
+  const seenIds = new Set<string>();
   const areas = requestedAreas(request.intent); const geoFilter = areas.length > 0 && !singleCity(request.intent);
   return input
     .filter((item): item is Candidate & { listing: LiveListing } => item.listing !== null)
@@ -179,8 +181,8 @@ export function rankCandidates(input: Candidate[], request: LiveSearchRequest): 
     // Location is a hard requirement: a listing must fall inside one of the requested areas. Records without coordinates cannot qualify.
     .map(item => { const nearest = nearestArea(item.coordinate, areas); return nearest ? { ...item, listing: { ...item.listing, area: nearest.area.label, distanceMiles: Math.round(nearest.miles * 10) / 10 } } : item; })
     .filter(({ listing }) => !geoFilter || listing.area !== undefined)
-    .filter(({ listing }) => { const key = [listing.title, listing.city, listing.rent, listing.beds].join("|").toLowerCase().replace(/\s+/g, " "); if (seen.has(key)) return false; seen.add(key); return true; })
-    .sort((a, b) => { const relevance = (item: typeof a) => { const listing = item.listing; const haystack = `${listing.title} ${listing.neighborhood} ${listing.city} ${listing.features.join(" ")} ${listing.warehouseSignals.join(" ")}`.toLowerCase(); return request.intent.searchTerms.filter((term) => haystack.includes(term)).length + regionalPreference(item, request.intent.preferredRegions) * 2 + (request.intent.warehouseStyle ? GRADE_WEIGHT[listing.styleGrade ?? "D"] : 0) - (listing.cautions?.some(c => c.startsWith("Short-term")) ? 3 : 0); }; return relevance(b) - relevance(a) || (a.listing.distanceMiles ?? Infinity) - (b.listing.distanceMiles ?? Infinity); });
+    .filter(({ listing }) => { const key = [listing.title, listing.city, listing.rent, listing.beds].join("|").toLowerCase().replace(/\s+/g, " "); if (seenIds.has(listing.id) || (!listing.title.startsWith("Undisclosed address") && seen.has(key))) return false; seenIds.add(listing.id); seen.add(key); return true; })
+    .sort((a, b) => { const relevance = (item: typeof a) => { const listing = item.listing; const haystack = `${listing.title} ${listing.neighborhood} ${listing.city} ${listing.features.join(" ")} ${listing.warehouseSignals.join(" ")}`.toLowerCase(); return request.intent.searchTerms.filter((term) => haystack.includes(term)).length + regionalPreference(item, request.intent.preferredRegions) * 2 + (request.intent.warehouseStyle ? GRADE_WEIGHT[listing.styleGrade ?? "D"] : 0) - (listing.cautions?.some(c => c.startsWith("Short-term")) ? 3 : 0); }; return (request.neighborhoods && request.neighborhoods.length > 1 ? scoreFit(b.listing, request.intent) - scoreFit(a.listing, request.intent) : 0) || relevance(b) - relevance(a) || (a.listing.distanceMiles ?? Infinity) - (b.listing.distanceMiles ?? Infinity); });
 }
 
 export async function searchRentCast(request: LiveSearchRequest, config: ProviderConfig, fetcher: typeof fetch = fetch, now = new Date()): Promise<LiveListing[]> {

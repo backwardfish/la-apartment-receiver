@@ -6,18 +6,19 @@
  * the trusted-origin allowlist (zillow.com, zillowstatic.com).
  *
  * Runs are asynchronous: `startZillowRuns` reserves nothing and starts one
- * bounded actor run for the selected MVP neighborhood; `pollZillowRuns`
+ * bounded actor run per selected neighborhood; `pollZillowRuns`
  * reports progress and, once every run has succeeded, returns ranked results.
  */
 import type { LiveListing, LiveSearchRequest } from "./live-search.ts";
 import { ProviderError, rankCandidates, requestedAreas, styleFields, detectFeatures, type Candidate } from "./providers.ts";
+import { normalizeNeighborhoodSelection, MAX_NEIGHBORHOODS } from "./neighborhoods.ts";
 import { trustedUrl } from "./security-urls.ts";
 import { assessStyle, styleText } from "./style.ts";
 
 export const APIFY_API = "https://api.apify.com/v2";
 export const ZILLOW_ACTOR = "igolaizola~zillow-scraper-ppe";
-/** The MVP starts one Actor run per search, capped by MAX_RUN_CHARGE_USD. */
-export const MAX_RUNS = 1;
+/** One independently capped run per area, with a hard ceiling on total fan-out. */
+export const MAX_RUNS = MAX_NEIGHBORHOODS;
 export const MAX_ITEMS_PER_RUN = 20;
 export const MAX_RUN_CHARGE_USD = 0.5;
 export const RUN_TIMEOUT_SECONDS = 120;
@@ -35,12 +36,13 @@ function record(value: unknown): UnknownRecord | undefined { return value && typ
 function text(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : undefined; }
 function num(value: unknown) { return typeof value === "number" && Number.isFinite(value) ? value : undefined; }
 
-/** One bounded Actor run for the single structured neighborhood selected by the MVP UI. */
+/** Only explicit supported selections can start paid work; text cannot widen the scope. */
 export function planRuns(request: LiveSearchRequest): Array<{ label: string; latitude: number; longitude: number; radiusMiles: number }> {
-  const areas = requestedAreas(request.intent);
-  if (areas.length !== 1) throw new ProviderError("invalid_neighborhood_scope", "Zillow MVP searches require exactly one supported neighborhood");
-  const area = areas[0];
-  return [{ label: area.label, latitude: area.latitude, longitude: area.longitude, radiusMiles: area.radiusMiles }];
+  let selected;
+  try { selected = normalizeNeighborhoodSelection(request.neighborhoods ?? request.neighborhood); }
+  catch { throw new ProviderError("invalid_neighborhood_scope", "Choose 1 to 5 distinct supported neighborhoods"); }
+  const areas = requestedAreas({ ...request.intent, locations: selected });
+  return areas.map(area => ({ label: area.label, latitude: area.latitude, longitude: area.longitude, radiusMiles: area.radiusMiles }));
 }
 
 export function actorInput(plan: ReturnType<typeof planRuns>[number], request: LiveSearchRequest): ActorInput {
@@ -95,15 +97,28 @@ export async function probeZillowActor(config: ZillowConfig, fetcher: typeof fet
   await apify<unknown>(`/acts/${ZILLOW_ACTOR}`, config, { maxBytes: 500_000 }, fetcher);
 }
 
-/** Start the single planned Actor run. Any failure aborts the search; the caller keeps its allowance reservation. */
+/** Best-effort cleanup; already-started work stays charged against the allowance. */
+export async function abortZillowRuns(runs: StartedRun[], config: ZillowConfig, fetcher: typeof fetch = fetch): Promise<void> {
+  await Promise.allSettled(runs.map(run => apify(`/actor-runs/${encodeURIComponent(run.id)}/abort`, config, { method: "POST" }, fetcher)));
+}
+
+/** Start at most five runs concurrently, keeping slow starts within one request deadline. */
 export async function startZillowRuns(request: LiveSearchRequest, config: ZillowConfig, fetcher: typeof fetch = fetch): Promise<StartedRun[]> {
-  const runs: StartedRun[] = [];
-  for (const plan of planRuns(request)) {
+  const started = await Promise.allSettled(planRuns(request).map(async plan => {
     const query = new URLSearchParams({ timeout: String(RUN_TIMEOUT_SECONDS), maxTotalChargeUsd: String(MAX_RUN_CHARGE_USD) });
-    const started = await apify<{ data?: { id?: unknown; defaultDatasetId?: unknown; status?: unknown } }>(`/acts/${ZILLOW_ACTOR}/runs?${query}`, config, { method: "POST", body: JSON.stringify(actorInput(plan, request)) }, fetcher);
-    const id = text(started?.data?.id), datasetId = text(started?.data?.defaultDatasetId);
-    if (!id || !datasetId) throw new ProviderError("apify_invalid_payload", "Apify did not return a run identifier");
-    runs.push({ id, datasetId, area: plan.label });
+    const result = await apify<{ data?: { id?: unknown; defaultDatasetId?: unknown } }>(`/acts/${ZILLOW_ACTOR}/runs?${query}`, config, { method: "POST", body: JSON.stringify(actorInput(plan, request)) }, fetcher);
+    const id = text(result?.data?.id), datasetId = text(result?.data?.defaultDatasetId);
+    if (!id || !datasetId) {
+      if (id) await abortZillowRuns([{ id, datasetId: "", area: plan.label }], config, fetcher);
+      throw new ProviderError("apify_invalid_payload", "Apify did not return a run identifier");
+    }
+    return { id, datasetId, area: plan.label };
+  }));
+  const runs = started.flatMap(result => result.status === "fulfilled" ? [result.value] : []);
+  const failed = started.find(result => result.status === "rejected");
+  if (failed?.status === "rejected") {
+    await abortZillowRuns(runs, config, fetcher);
+    throw failed.reason;
   }
   return runs;
 }
@@ -115,21 +130,26 @@ export type PollResult =
 
 /** Check every run; when all have succeeded, download, normalise, and rank the items. */
 export async function pollZillowRuns(runs: StartedRun[], request: LiveSearchRequest, config: ZillowConfig, fetcher: typeof fetch = fetch, now = new Date()): Promise<PollResult> {
+  if (runs.length < 1 || runs.length > MAX_RUNS) throw new ProviderError("invalid_neighborhood_scope", "Invalid number of provider runs");
   let finished = 0, usageUsd = 0;
-  for (const run of runs) {
-    const status = await apify<{ data?: { status?: unknown; usageTotalUsd?: unknown } }>(`/actor-runs/${encodeURIComponent(run.id)}`, config, {}, fetcher);
+  const statuses = await Promise.all(runs.map(run => apify<{ data?: { status?: unknown; usageTotalUsd?: unknown } }>(`/actor-runs/${encodeURIComponent(run.id)}`, config, {}, fetcher)));
+  for (const status of statuses) {
     const state = text(status?.data?.status) ?? "UNKNOWN";
     if (state === "SUCCEEDED") { finished++; usageUsd += num(status?.data?.usageTotalUsd) ?? 0; continue; }
-    if (RUN_TERMINAL.has(state)) return { status: "failed", code: `apify_run_${state.toLowerCase().replace(/[^a-z]/g, "_")}` };
+    if (RUN_TERMINAL.has(state)) {
+      await abortZillowRuns(runs, config, fetcher);
+      return { status: "failed", code: `apify_run_${state.toLowerCase().replace(/[^a-z]/g, "_")}` };
+    }
   }
   if (finished < runs.length) return { status: "running", finished, total: runs.length };
   const candidates: Candidate[] = [];
-  for (const run of runs) {
+  const datasets = await Promise.all(runs.map(async run => {
     const query = new URLSearchParams({ clean: "true", format: "json", limit: String(MAX_ITEMS_PER_RUN), fields: "zpid,_type,title,url,hdpUrl,address,price,bedrooms,bathrooms,livingArea,yearBuilt,propertyType,daysOnZillow,listingDateTimeOnZillow,location,media,rental,_details" });
     const items = await apify<unknown>(`/datasets/${encodeURIComponent(run.datasetId)}/items?${query}`, config, { maxBytes: ITEMS_BYTE_CAP }, fetcher);
     if (!Array.isArray(items)) throw new ProviderError("apify_invalid_payload", "Apify dataset was not a list");
-    for (const item of items) candidates.push({ index: candidates.length, listing: normalizeZillowListing(item, now), coordinate: coordinateOf(item) });
-  }
+    return items.slice(0, MAX_ITEMS_PER_RUN);
+  }));
+  for (const items of datasets) for (const item of items) candidates.push({ index: candidates.length, listing: normalizeZillowListing(item, now), coordinate: coordinateOf(item) });
   if (candidates.length && !candidates.some((candidate) => candidate.listing)) throw new ProviderError("source_evidence_unavailable", "Provider records lack required source evidence");
   return { status: "done", results: rankCandidates(candidates, request).map(({ listing }) => listing), usageUsd: Math.round(usageUsd * 1000) / 1000 };
 }

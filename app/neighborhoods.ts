@@ -65,3 +65,15 @@ export function isNeighborhoodKey(value: unknown): value is NeighborhoodKey {
 export function neighborhoodLabel(value: string): string {
   return neighborhoodByKey(value)?.label ?? value.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
+
+/** Shared UI/API limit. Empty, duplicate, and unsupported selections fail closed. */
+export const MAX_NEIGHBORHOODS = 5;
+export function isNeighborhoodSelection(value: unknown): value is NeighborhoodKey[] {
+  return Array.isArray(value) && value.length >= 1 && value.length <= MAX_NEIGHBORHOODS
+    && value.every(isNeighborhoodKey) && new Set(value).size === value.length;
+}
+export function normalizeNeighborhoodSelection(value: unknown): NeighborhoodKey[] {
+  const selected = typeof value === "string" ? [value] : value;
+  if (!isNeighborhoodSelection(selected)) throw new Error("Choose 1 to 5 distinct supported Los Angeles neighborhoods.");
+  return [...selected].sort();
+}
