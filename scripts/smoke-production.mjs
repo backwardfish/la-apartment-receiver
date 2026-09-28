@@ -56,6 +56,7 @@ const checks = [
   { name:'invalid query', path:'/api/search', init:{ method:'POST', headers:{'content-type':'application/json'}, body:'{"query":""}' }, expected:400 },
   { name:'missing neighborhood', path:'/api/search', init:{ method:'POST', headers:{'content-type':'application/json'}, body:'{"query":"loft"}' }, expected:400 },
   { name:'invalid neighborhood', path:'/api/search', init:{ method:'POST', headers:{'content-type':'application/json'}, body:'{"query":"loft","neighborhood":"not-real"}' }, expected:400 },
+  ...[[], ['arts district','arts district'], ['not-real'], ['arts district','hollywood','koreatown','ucla','usc','venice']].map(neighborhoods => ({name:`invalid selection ${JSON.stringify(neighborhoods)}`,path:'/api/search',init:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query:'loft',neighborhoods})},expected:400})),
   { name:'wrong method', path:'/api/search', expected:405 },
   { name:'wrong media', path:'/api/search', init:{method:'POST',headers:{'content-type':'text/plain'},body:'invalid'}, expected:415 },
   { name:'oversized body', path:'/api/search', init:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query:'',padding:'x'.repeat(20_001)})}, expected:413 },

@@ -6,8 +6,8 @@ import { release } from '../../app/release.ts';
 import { reserveNetlifySearch } from '../../app/netlify-search-budget.ts';
 import { SearchBudgetError } from '../../app/search-budget.ts';
 import { cacheKeyFor, isFreshRecord, searchStore, type SearchRecord, type SearchStore } from '../../app/search-records.ts';
-import { startZillowRuns } from '../../app/zillow-apify.ts';
-import { isNeighborhoodKey } from '../../app/neighborhoods.ts';
+import { startZillowRuns, abortZillowRuns } from '../../app/zillow-apify.ts';
+import { isNeighborhoodKey, isNeighborhoodSelection } from '../../app/neighborhoods.ts';
 
 declare const Netlify: { env: { get(key: string): string | undefined } };
 
@@ -64,11 +64,12 @@ export const createSearchHandler = (reserve = reserveNetlifySearch, store: () =>
   try { payload = await boundedJson(request); }
   catch (error) { return error instanceof RangeError ? unavailable('payload_too_large', 'The apartment search request is too large.', 413) : unavailable('invalid_request', 'Send a valid apartment search.', 400); }
   if (!payload || typeof payload !== 'object' || !('query' in payload) || typeof payload.query !== 'string') return unavailable('invalid_request', 'A non-empty apartment search is required.', 400);
-  const neighborhood = 'neighborhood' in payload ? payload.neighborhood : undefined;
-  if (!isNeighborhoodKey(neighborhood)) return unavailable('invalid_request', 'Choose a supported Los Angeles neighborhood.', 400);
+  if ('neighborhoods' in payload && 'neighborhood' in payload) return unavailable('invalid_request', 'Send neighborhoods or neighborhood, not both.', 400);
+  const neighborhood = 'neighborhoods' in payload ? payload.neighborhoods : 'neighborhood' in payload ? payload.neighborhood : undefined;
+  if ('neighborhoods' in payload ? !isNeighborhoodSelection(neighborhood) : !isNeighborhoodKey(neighborhood)) return unavailable('invalid_request', 'Choose 1 to 5 distinct supported Los Angeles neighborhoods.', 400);
   let normalized: LiveSearchRequest;
   try { normalized = buildLiveSearchRequest(payload.query, neighborhood); }
-  catch { return unavailable('invalid_request', 'Choose a supported Los Angeles neighborhood and enter a search between 1 and 500 characters.', 400); }
+  catch { return unavailable('invalid_request', 'Choose 1 to 5 supported Los Angeles neighborhoods and enter a search between 1 and 500 characters.', 400); }
   if (Netlify.env.get('LIVE_SEARCH_ENABLED') !== 'true') {
     console.info(JSON.stringify({ event: 'search_paused', requestId }));
     return unavailable('search_paused', 'Live search is paused. The research snapshot is available below.', 503);
@@ -123,7 +124,7 @@ async function zillowSearch(normalized: LiveSearchRequest, requestId: string, un
     return unavailable('search_store_unavailable', 'Live search is temporarily unavailable while its search storage cannot be reached. Please try again later.', 503);
   }
   try {
-    await reserve(key => Netlify.env.get(key));
+    await reserve(key => Netlify.env.get(key), normalized.neighborhoods!.length);
   } catch (error) {
     if (error instanceof SearchBudgetError && error.code === 'search_allowance_exhausted') {
       return unavailable(error.code, 'The shared live-search allowance has been reached. Please try again after it resets; the research snapshot remains available.', 429, error.retryAfter);
@@ -132,9 +133,11 @@ async function zillowSearch(normalized: LiveSearchRequest, requestId: string, un
     return unavailable('search_allowance_unavailable', 'Live search is temporarily unavailable while its usage allowance cannot be checked. Please try again later.', 503);
   }
   try {
+    const createdAt = new Date().toISOString();
     const runs = await startZillowRuns(normalized, { apifyToken }, fetcher);
-    const record: SearchRecord = { version: 2, id: crypto.randomUUID(), createdAt: new Date().toISOString(), query: normalized.query, neighborhood: normalized.neighborhood!, provider: 'zillow-apify', cacheKey, runs, status: 'running' };
-    await records.put(record);
+    const record: SearchRecord = { version: 3, id: crypto.randomUUID(), createdAt, query: normalized.query, neighborhoods: normalized.neighborhoods!, provider: 'zillow-apify', cacheKey, runs, status: 'running' };
+    try { await records.put(record); }
+    catch (error) { await abortZillowRuns(runs, { apifyToken }, fetcher); throw error; }
     console.info(JSON.stringify({ event: 'live_search_started', requestId, runs: runs.length }));
     return response({ status: 'pending', searchId: record.id, pollAfterMs: POLL_AFTER_MS, provider: ZILLOW_PROVIDER_LABEL, finished: 0, total: runs.length, elapsedMs: 0 }, 202, requestId);
   } catch (error) {

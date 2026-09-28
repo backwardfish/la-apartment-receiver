@@ -1,5 +1,5 @@
 import { parseSearchIntent, type SearchIntent } from "./search-intent.ts";
-import { isNeighborhoodKey, type NeighborhoodKey } from "./neighborhoods.ts";
+import { normalizeNeighborhoodSelection, type NeighborhoodKey } from "./neighborhoods.ts";
 
 export type ListingFreshness = "live" | "recent" | "needs-verification" | "stale";
 
@@ -45,7 +45,9 @@ export type LiveListing = {
 
 export type LiveSearchRequest = {
   query: string;
+  /** Legacy single-area alias; omitted for aggregated searches. */
   neighborhood?: NeighborhoodKey;
+  neighborhoods?: NeighborhoodKey[];
   intent: SearchIntent;
 };
 
@@ -83,11 +85,12 @@ export function buildLiveSearchRequest(query: string, neighborhood?: unknown): L
   if (trimmedQuery.length > 500) throw new Error("Keep the apartment search under 500 characters.");
   const parsed = parseSearchIntent(trimmedQuery);
   if (neighborhood === undefined) return { query: trimmedQuery, intent: parsed };
-  if (!isNeighborhoodKey(neighborhood)) throw new Error("Choose a supported Los Angeles neighborhood.");
+  const neighborhoods = normalizeNeighborhoodSelection(neighborhood);
   return {
     query: trimmedQuery,
-    neighborhood,
-    intent: { ...parsed, locations: [neighborhood], locationQuery: neighborhood },
+    neighborhood: neighborhoods.length === 1 ? neighborhoods[0] : undefined,
+    neighborhoods,
+    intent: { ...parsed, locations: neighborhoods, locationQuery: neighborhoods[0] },
   };
 }
 
@@ -121,12 +124,12 @@ async function readEnvelope(response: Response): Promise<LiveSearchResponse> {
   throw new Error("Receiver received an invalid response from the live-search service.");
 }
 
-export async function requestLiveSearch(query: string, neighborhood: NeighborhoodKey, signal?: AbortSignal, onProgress?: (progress: SearchProgress) => void, fetcher: typeof fetch = fetch, wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))): Promise<LiveSearchOutcome> {
+export async function requestLiveSearch(query: string, neighborhood: NeighborhoodKey | NeighborhoodKey[], signal?: AbortSignal, onProgress?: (progress: SearchProgress) => void, fetcher: typeof fetch = fetch, wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))): Promise<LiveSearchOutcome> {
   const payload = buildLiveSearchRequest(query, neighborhood);
   const response = await fetcher("/api/search", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query: payload.query, neighborhood: payload.neighborhood }),
+    body: JSON.stringify({ query: payload.query, ...(Array.isArray(neighborhood) ? { neighborhoods: payload.neighborhoods } : { neighborhood: payload.neighborhood }) }),
     signal,
   });
   let envelope = await readEnvelope(response);

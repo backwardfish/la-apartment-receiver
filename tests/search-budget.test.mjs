@@ -124,3 +124,16 @@ test('failed provider calls still consume a reservation', async t => {
   assert.equal((await handler(request(), {})).status, 429);
   assert.equal(calls, 1);
 });
+
+
+test('multi-area reservations are atomic and cannot overspend or partially consume allowance', async () => {
+  const connect = sharedStore();
+  const results = await Promise.allSettled(Array.from({ length: 12 }, () => reserveSearch(connect(), { daily: 5, monthly: 8 }, now, 2)));
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 2);
+  assert.equal((await connect().read()).data.daily, 4);
+  await assert.rejects(reserveSearch(connect(), { daily: 5, monthly: 8 }, now, 2), /exhausted/);
+  assert.equal((await connect().read()).data.daily, 4);
+  await reserveSearch(connect(), { daily: 5, monthly: 8 }, now);
+  assert.equal((await connect().read()).data.daily, 5);
+  for (const units of [0, -1, 1.5, Infinity]) await assert.rejects(reserveSearch(connect(), undefined, now, units), /unavailable/);
+});

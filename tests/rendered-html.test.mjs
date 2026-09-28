@@ -30,6 +30,9 @@ test("renders production metadata", async () => {
   const html = await response.text();
   assert.match(html, /<title>LA Apartment Receiver<\/title>/i);
   assert.doesNotMatch(html, /codex-preview/i);
+  assert.match(html, /Choose 1–5 neighborhoods/);
+  assert.match(html, /type="checkbox"/);
+  assert.doesNotMatch(html, /All Los Angeles/);
 });
 test("creates a static Netlify entry point", async () => {
   await access(new URL("../dist/client/index.html", import.meta.url));

@@ -2,7 +2,7 @@ import type { Config, Context } from '@netlify/functions';
 import { buildLiveSearchRequest } from '../../app/live-search.ts';
 import { ProviderError } from '../../app/providers.ts';
 import { SEARCH_ID_PATTERN, searchStore, type SearchRecord, type SearchStore } from '../../app/search-records.ts';
-import { pollZillowRuns, SEARCH_DEADLINE_MS } from '../../app/zillow-apify.ts';
+import { pollZillowRuns, abortZillowRuns, SEARCH_DEADLINE_MS } from '../../app/zillow-apify.ts';
 import { completedEnvelope, POLL_AFTER_MS, response, ZILLOW_PROVIDER_LABEL } from './search.ts';
 
 declare const Netlify: { env: { get(key: string): string | undefined } };
@@ -35,9 +35,12 @@ export const createSearchStatusHandler = (store: () => SearchStore = () => searc
     try { await records.put({ ...record, status: 'failed', code, completedAt: now().toISOString() }); } catch { /* the failure is already reported to the caller */ }
     return unavailable('search_provider_error', failureMessage(code), 502);
   };
-  if (elapsedMs > SEARCH_DEADLINE_MS) return fail('apify_search_deadline');
+  if (elapsedMs > SEARCH_DEADLINE_MS) {
+    await abortZillowRuns(record.runs, { apifyToken }, fetcher);
+    return fail('apify_search_deadline');
+  }
   try {
-    const poll = await pollZillowRuns(record.runs, buildLiveSearchRequest(record.query, record.neighborhood), { apifyToken }, fetcher, now());
+    const poll = await pollZillowRuns(record.runs, buildLiveSearchRequest(record.query, record.neighborhoods ?? record.neighborhood), { apifyToken }, fetcher, now());
     if (poll.status === 'running') return response({ status: 'pending', searchId: record.id, pollAfterMs: POLL_AFTER_MS, provider: ZILLOW_PROVIDER_LABEL, finished: poll.finished, total: poll.total, elapsedMs }, 202, requestId);
     if (poll.status === 'failed') return fail(poll.code);
     const done: SearchRecord = { ...record, status: 'done', results: poll.results, completedAt: now().toISOString(), usageUsd: poll.usageUsd };

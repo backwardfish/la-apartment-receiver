@@ -1,17 +1,17 @@
 # LA Apartment Receiver
 
-A source-linked Los Angeles rental research workspace. The LA-only MVP uses a required single-neighborhood selector and Zillow via Apify for live searches. Results require approved HTTPS listing links and images, and retrieval time stays separate from the provider's last-seen time. Every listing still needs an availability check at its original source.
+A source-linked Los Angeles rental research workspace. The LA-only MVP uses a required selector for one to five neighborhoods and Zillow via Apify for live searches. Results require approved HTTPS listing links and images, and retrieval time stays separate from the provider's last-seen time. Every listing still needs an availability check at its original source.
 
 ## Live sources
 
 `LISTING_PROVIDER` chooses the live source:
 
-- `zillow-apify` — the MVP source. Zillow rental listings are retrieved through the Apify actor [`igolaizola/zillow-scraper-ppe`](https://apify.com/igolaizola/zillow-scraper-ppe) using `APIFY_TOKEN`. The browser submits one canonical neighborhood plus free-text criteria. The server starts exactly one bounded Actor run (20 records, 120 s Actor timeout, $0.50 maximum charge), returns `202`, and the browser polls `GET /api/search-status?id=` until completion. A finished search for the same normalized brief is reused for 6 hours without a new run.
+- `zillow-apify` — the MVP source. Zillow rental listings are retrieved through the Apify actor [`igolaizola/zillow-scraper-ppe`](https://apify.com/igolaizola/zillow-scraper-ppe) using `APIFY_TOKEN`. The browser submits one to five canonical neighborhoods plus free-text criteria. The server atomically reserves allowance for the full selection and starts one bounded Actor run per neighborhood (20 records, 120 s Actor timeout, $0.50 maximum charge each; at most five runs / $2.50 per search), returns `202`, and the browser polls `GET /api/search-status?id=` until completion. Results from all areas are combined, deduplicated, and ranked globally by fit (with text relevance and distance breaking ties). A finished search for the same normalized selection and ranking brief is reused for 6 hours without a new run.
 - `rentcast` — retained only for compatibility/testing. It is never selected implicitly; missing or invalid `LISTING_PROVIDER` fails closed instead of falling back.
 
 > **Known blocker for the RentCast source (confirmed 2026-09-15).** RentCast's published rental-listing schema contains no listing URL, photos, description, or neighborhood ([schema](https://developers.rentcast.io/reference/property-listings-schema)). The adapter's evidence gate therefore rejects every real RentCast record (`tests/providers.test.mjs`, "KNOWN BLOCKER"), and loft/warehouse detection has no text to read. Live search cannot return results until a source that supplies listing links, photos, and descriptions is approved, or the evidence contract is deliberately changed. Do not relax the gate to make a search "work".
 
-For the MVP, geography is structured rather than inferred from prose. The UI requires one supported LA neighborhood from the shared registry in `app/neighborhoods.ts`; API validation, provider coordinates, post-filtering, display labels, and tests all consume that same registry. Free text is reserved for budget, bedrooms, amenities, and style. A brief that asks for a loft or warehouse only shows listings whose own description carries that evidence; a short honest list is preferred to a padded one.
+For the MVP, geography is structured rather than inferred from prose. The UI requires one to five distinct supported LA neighborhoods from the shared registry in `app/neighborhoods.ts`; API validation, provider coordinates, post-filtering, display labels, and tests all consume that same registry. Free text is reserved for budget, bedrooms, amenities, and style. A brief that asks for a loft or warehouse only shows listings whose own description carries that evidence; a short honest list is preferred to a padded one.
 
 When live search is unavailable, the interface explicitly labels the research snapshot. A missing Google Routes key permits only the documented Santa Monica neighborhood estimates; their upper bound must meet the requested cutoff. Other commute destinations require Routes. Estimates are labeled without a live-traffic claim.
 
@@ -46,3 +46,10 @@ Use protected pull requests to update `main`. See [the release and security runb
 Search criteria, saved/rejected/compared IDs, and bounded listing records persist in this browser. State expires after 30 days without use, and is removed on the next visit. “Clear saved workspace” removes app-managed storage. Shared-device users and same-origin scripts can access it; there is no cross-device sync or account vault.
 
 Saving and comparison toggles are research aids. They do not contact a landlord or submit an inquiry. Approved external images are loaded directly and can disclose the viewer's IP to their hosts; the browser sends no referring page URL.
+
+### Multi-neighborhood compatibility
+
+`POST /api/search` accepts `{ "query": "loft under $3,500", "neighborhoods": ["arts district", "koreatown"] }`.
+The legacy `neighborhood` string remains supported. Send only one form; empty, duplicate, unknown, and more-than-five selections return 400 before paid work. Selection order does not change cache identity. This does not add LA-wide search.
+
+Each Zillow area consumes one allowance unit, atomically reserved before any run starts. Partial starts are aborted where possible and are never returned as a complete search. Failed runs retain their allowance. Browser workspace v5 migrates v4 single-area searches and preserves saved listings; server v2 records remain pollable alongside v3 multi-area records.

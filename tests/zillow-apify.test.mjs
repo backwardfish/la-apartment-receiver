@@ -58,8 +58,8 @@ test("plans exactly one bounded actor run for the selected MVP neighborhood", ()
   assert.ok(broadInput.distanceMiles >= 1 && broadInput.maxItems === MAX_ITEMS_PER_RUN);
   const loftInput = actorInput(plans[0], buildLiveSearchRequest("warehouse loft under $3,500", "arts district"));
   assert.equal(loftInput.keywords, "loft");
-  assert.equal(MAX_RUNS, 1);
-  assert.throws(() => planRuns(buildLiveSearchRequest("loft near UCLA, USC, or Arts District")), /exactly one supported neighborhood/);
+  assert.equal(MAX_RUNS, 5);
+  assert.throws(() => planRuns(buildLiveSearchRequest("loft near UCLA, USC, or Arts District")), /1 to 5 distinct supported neighborhoods/);
 });
 
 test("starts runs with a bearer token, never in the URL, and polls to ranked results", async () => {
@@ -95,4 +95,61 @@ test("reports running, failed, and evidence-less runs distinctly", async () => {
   await assert.rejects(pollZillowRuns(runs, request, config, async (url) => String(url).includes("/datasets/") ? Response.json([{ zpid: 1, address: { streetAddress: "x", city: "Los Angeles" }, price: { value: 1 }, bedrooms: 1, bathrooms: 1 }]) : Response.json({ data: { status: "SUCCEEDED" } })), (error) => error.code === "source_evidence_unavailable");
   await assert.rejects(pollZillowRuns(runs, request, config, async () => new Response("denied", { status: 401 })), (error) => error.code === "apify_http_401" && !error.message.includes("denied"));
   await assert.rejects(startZillowRuns(request, config, async () => Response.json({ data: {} }, { status: 201 })), (error) => error.code === "apify_invalid_payload");
+});
+
+
+test("plans five bounded runs, waits for every area, deduplicates overlaps, and ranks globally", async () => {
+  const request = buildLiveSearchRequest("warehouse loft under $3,500", ["ucla", "arts district", "koreatown", "hollywood", "usc"]);
+  const plans = planRuns(request);
+  assert.equal(plans.length, 5);
+  const calls = [];
+  let running = true;
+  const fetcher = async (url, init) => {
+    calls.push(String(url));
+    if (init?.method === 'POST') return Response.json({ data: { id: `run-${calls.length}`, defaultDatasetId: `ds-${calls.length}` } });
+    if (String(url).includes('/actor-runs/')) return Response.json({ data: { status: running && String(url).endsWith('run-5') ? 'RUNNING' : 'SUCCEEDED', usageTotalUsd: 0.02 } });
+    // Every dataset overlaps. The poorer-fit result is supplied first.
+    return Response.json([...sample].reverse());
+  };
+  const runs = await startZillowRuns(request, { apifyToken:'test' }, fetcher);
+  assert.equal(runs.length, 5);
+  assert.equal(calls.filter(url=>url.includes('maxTotalChargeUsd=0.5')).length, 5);
+  const pending = await pollZillowRuns(runs, request, { apifyToken:'test' }, fetcher, now);
+  assert.deepEqual(pending, { status:'running', finished:4, total:5 });
+  assert.equal(calls.filter(url=>url.includes('/datasets/')).length, 0);
+  running = false;
+  const result = await pollZillowRuns(runs, request, { apifyToken:'test' }, fetcher, now);
+  assert.equal(result.status, 'done');
+  assert.equal(result.usageUsd, 0.1);
+  assert.deepEqual(result.results.map(listing=>listing.title), ['130 S Hewitt St APT 31','201 S Santa Fe Ave Suite 211']);
+  assert.equal(new Set(result.results.map(listing=>listing.id)).size, result.results.length);
+});
+
+test("a failed start aborts the successfully started siblings without reporting partial success", async () => {
+  const request = buildLiveSearchRequest("loft", ["arts district", "ucla"]);
+  const aborted = [];
+  let starts = 0;
+  await assert.rejects(startZillowRuns(request, { apifyToken:'test' }, async (url) => {
+    if (String(url).endsWith('/abort')) { aborted.push(String(url)); return Response.json({ data:{} }); }
+    if (++starts === 1) return Response.json({ data:{ id:'run-ok', defaultDatasetId:'ds-ok' } });
+    return new Response('private provider error', { status:503 });
+  }), error=>error.code==='apify_http_503');
+  assert.equal(starts, 2);
+  assert.deepEqual(aborted, ['https://api.apify.com/v2/actor-runs/run-ok/abort']);
+});
+
+
+test("a stronger listing from another area ranks first, while duplicate IDs and out-of-scope rows are removed", async () => {
+  const weak = structuredClone(byStreet("201 S Santa Fe Ave Suite 211"));
+  const strong = structuredClone(byStreet("130 S Hewitt St APT 31"));
+  // Preserve source evidence, but place the stronger synthetic test row in UCLA.
+  strong.location = { latitude:34.0689, longitude:-118.4452 };
+  const changedDuplicate = { ...strong, price:{value:3100} };
+  const outside = { ...strong, zpid:999, location:{latitude:33.7,longitude:-118.1} };
+  const request = buildLiveSearchRequest("warehouse loft under $3,500", ['arts district','ucla']);
+  const runs = [{id:'arts',datasetId:'arts',area:'Arts District'},{id:'ucla',datasetId:'ucla',area:'Westwood / UCLA'}];
+  const result = await pollZillowRuns(runs, request, {apifyToken:'test'}, async url => String(url).includes('/actor-runs/')
+    ? Response.json({data:{status:'SUCCEEDED'}})
+    : Response.json(String(url).includes('/datasets/arts/') ? [weak, outside] : [strong,changedDuplicate]), now);
+  assert.deepEqual(result.results.map(listing=>[listing.id,listing.area]), [[`zillow:${strong.zpid}`,'Westwood / UCLA'],[`zillow:${weak.zpid}`,'Arts District']]);
 });

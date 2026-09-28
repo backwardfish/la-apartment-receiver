@@ -3,9 +3,9 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createSearchHandler, listingProvider } from '../netlify/functions/search.ts';
 import { createSearchStatusHandler } from '../netlify/functions/search-status.ts';
-import { cacheKeyFor, isFreshRecord } from '../app/search-records.ts';
+import { cacheKeyFor, isFreshRecord, readSearchRecord } from '../app/search-records.ts';
 import { parseSearchIntent, } from '../app/search-intent.ts';
-import { requestLiveSearch } from '../app/live-search.ts';
+import { requestLiveSearch, buildLiveSearchRequest } from '../app/live-search.ts';
 
 const sample = JSON.parse(await readFile(new URL('./fixtures/zillow-apify-sample.json', import.meta.url), 'utf8'));
 const context = { requestId: 'test-request' };
@@ -27,7 +27,7 @@ function apifyFetcher(state = { runStatus: 'RUNNING', items: sample }) {
   const calls = [];
   const fetcher = async (url, init) => {
     calls.push({ url: String(url), init });
-    if (String(url).includes('/acts/')) return Response.json({ data: { id: 'run-1', defaultDatasetId: 'ds-1' } }, { status: 201 });
+    if (String(url).includes('/acts/')) return Response.json({ data: { id: `run-${calls.length}`, defaultDatasetId: `ds-${calls.length}` } }, { status: 201 });
     if (String(url).includes('/actor-runs/')) return Response.json({ data: { status: state.runStatus, usageTotalUsd: 0.03 } });
     if (String(url).includes('/datasets/')) return Response.json(state.items);
     return new Response('unexpected', { status: 500 });
@@ -42,11 +42,11 @@ test('provider selection fails closed unless an explicit supported provider is c
   assert.equal(listingProvider(() => 'zillow'), 'unconfigured');
 });
 
-test('cache keys ignore ranking words but change with areas, budget, features, and style', () => {
+test('cache keys include ranking words as well as areas, budget, features, and style', () => {
   const baseQuery = 'warehouse loft in Arts District under $3,500';
   const base = cacheKeyFor(parseSearchIntent(baseQuery), baseQuery);
   const rankedQuery = 'quiet sunny warehouse loft in Arts District under $3,500';
-  assert.equal(cacheKeyFor(parseSearchIntent(rankedQuery), rankedQuery), base);
+  assert.notEqual(cacheKeyFor(parseSearchIntent(rankedQuery), rankedQuery), base);
   const cheaper = 'warehouse loft in Arts District under $3,000';
   assert.notEqual(cacheKeyFor(parseSearchIntent(cheaper), cheaper), base);
   const parking = 'warehouse loft in Arts District under $3,500 with parking';
@@ -154,4 +154,80 @@ test('the browser client follows a pending search to its result and gives up aft
   const realNow = Date.now; Date.now = () => (now += 60_000);
   try { const timeout = await requestLiveSearch('loft', 'arts district', undefined, undefined, forever, async () => {}); assert.equal(timeout.code, 'search_timeout'); }
   finally { Date.now = realNow; void clock; }
+});
+
+
+test('multi-area API preserves all areas through status, counts run allowance, and uses order-independent cache keys', async (t) => {
+  env();
+  t.mock.method(console, 'info', () => {}); t.mock.method(console, 'error', () => {});
+  const { store } = memoryStore();
+  const apify = apifyFetcher({ runStatus:'SUCCEEDED', items:sample });
+  let units = 0;
+  const search = createSearchHandler(async (_get, count) => { units += count; }, () => store, apify.fetcher);
+  const request = (neighborhoods, query='warehouse loft under $3,500') => new Request('https://receiver.test/api/search', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ query, neighborhoods }) });
+  const pending = await (await search(request(['ucla','arts district']), context)).json();
+  assert.equal(pending.total, 2);
+  assert.equal(units, 2);
+  const record = await store.get(pending.searchId);
+  assert.equal(record.version, 3);
+  assert.deepEqual(record.neighborhoods, ['arts district','ucla']);
+  const done = await createSearchStatusHandler(() => store, apify.fetcher)(status(pending.searchId), context);
+  assert.equal(done.status, 200);
+  const results = (await done.json()).results;
+  assert.equal(results.length, 2);
+  assert.equal(new Set(results.map(listing=>listing.id)).size, results.length);
+  const calls = apify.calls.length;
+  assert.equal((await search(request(['arts district','ucla']), context)).status, 200);
+  assert.equal(apify.calls.length, calls);
+  assert.equal(units, 2);
+  assert.equal((await search(request(['arts district']), context)).status, 202);
+  assert.equal(units, 3);
+  const a = buildLiveSearchRequest('loft', ['ucla','arts district']);
+  const b = buildLiveSearchRequest('bachelor pad loft', ['arts district','ucla']);
+  assert.notEqual(cacheKeyFor(a.intent,a.query), cacheKeyFor(b.intent,b.query));
+});
+
+test('invalid or ambiguous selections fail before storage, reservation, or provider access', async () => {
+  const forbidden = () => { throw new Error('must not access dependencies'); };
+  const search = createSearchHandler(forbidden, forbidden, forbidden);
+  for (const extra of [
+    { neighborhoods:[] }, { neighborhoods:['arts district','arts district'] },
+    { neighborhoods:['hollywood','not-real'] }, { neighborhoods:'arts district' },
+    { neighborhoods:['arts district','hollywood','koreatown','ucla','usc','venice'] },
+    { neighborhoods:['arts district'], neighborhood:'hollywood' }, { neighborhoods:null },
+  ]) {
+    const response = await search(new Request('https://receiver.test/api/search', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({query:'loft',...extra})}), context);
+    assert.equal(response.status, 400);
+  }
+});
+
+test('browser serializes the complete selection and legacy single-area requests remain supported', async () => {
+  for (const selection of [['ucla','arts district'],'arts district']) {
+    let payload;
+    const result = await requestLiveSearch('loft', selection, undefined, undefined, async (_url, init) => {
+      payload = JSON.parse(init.body);
+      return Response.json({ status:'ok', query:'loft', searchedAt:new Date().toISOString(), results:[], provider:'test' });
+    });
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(payload, Array.isArray(selection) ? { query:'loft', neighborhoods:['arts district','ucla'] } : { query:'loft', neighborhood:'arts district' });
+  }
+});
+
+test('legacy v2 running searches still complete after deployment', async () => {
+  env();
+  const { store } = memoryStore();
+  const id = '11111111-2222-4333-8444-555555555555';
+  await store.put({ version:2, id, createdAt:new Date().toISOString(), query:'warehouse loft under $3,500', neighborhood:'arts district', provider:'zillow-apify', cacheKey:'old', runs:[{id:'old-run', datasetId:'old-dataset', area:'Arts District'}], status:'running' });
+  const apify = apifyFetcher({ runStatus:'SUCCEEDED', items:sample });
+  assert.equal((await createSearchStatusHandler(()=>store,apify.fetcher)(status(id),context)).status,200);
+});
+
+
+test('durable record reader accepts legacy and multi-area records and rejects corrupt scopes', () => {
+  const base = { id:'11111111-2222-4333-8444-555555555555', query:'loft', runs:[], status:'done' };
+  assert.ok(readSearchRecord({...base,version:2,neighborhood:'arts district'}));
+  assert.ok(readSearchRecord({...base,version:3,neighborhoods:['arts district','ucla']}));
+  for (const neighborhoods of [undefined, [], ['not-real'], ['ucla','ucla'], ['arts district','ucla','usc','hollywood','koreatown','venice']]) {
+    assert.equal(readSearchRecord({...base,version:3,neighborhoods}),null);
+  }
 });
