@@ -279,10 +279,6 @@ export function tailorListings<T extends IntentListing>(listings: T[], intent: S
     const location = `${listing.neighborhood} ${listing.city}`.toLowerCase().replace(/[^a-z0-9]+/g, " ");
     return requestedLocations.some((requested) => location.includes(requested));
   };
-  // "Loft" is a hard requirement, not a ranking hint: a generic apartment must
-  // not be presented as a match for a warehouse/loft brief.
-  const styleMatches = (listing: T) =>
-    !intent.warehouseStyle || hasWarehouseEvidence(`${listing.title} ${listing.features.join(" ")} ${(listing as { warehouseSignals?: string[] }).warehouseSignals?.join(" ") ?? ""}`);
 
   return listings
     .filter((listing) => intent.minRent === undefined || listing.rent >= intent.minRent)
@@ -292,11 +288,11 @@ export function tailorListings<T extends IntentListing>(listings: T[], intent: S
       intent.requiredFeatures.every((feature) => listing.features.includes(feature)),
     )
     .filter(locationMatches)
-    .filter(styleMatches)
     .map((listing) => {
       const haystack = `${listing.title} ${listing.neighborhood} ${listing.city} ${listing.features.join(" ")}`.toLowerCase();
       const termMatches = intent.searchTerms.filter((term) => haystack.includes(term)).length;
-      const relevance = termMatches * 10 + intent.requiredFeatures.length * 4 + (requestedLocation ? 8 : 0);
+      const styleMatch = hasWarehouseEvidence(`${listing.title} ${listing.features.join(" ")} ${(listing as { warehouseSignals?: string[] }).warehouseSignals?.join(" ") ?? ""}`);
+      const relevance = termMatches * 10 + intent.requiredFeatures.length * 4 + (requestedLocation ? 8 : 0) + (intent.warehouseStyle && styleMatch ? 30 : 0);
       return { listing, relevance, termMatches };
     })
     // Free-form words such as "quiet" are ranking hints, not requirements that
@@ -322,7 +318,7 @@ export function describeSearchIntent(intent: SearchIntent): string {
   }
   if (intent.requiredFeatures.length) parts.push(intent.requiredFeatures.join(" + ").toLowerCase());
   if (intent.locations.length) parts.push(`near ${intent.locations.map(displayArea).join(" / ")}`);
-  if (intent.warehouseStyle) parts.push("warehouse-style");
+  if (intent.warehouseStyle) parts.push("warehouse-style preferred");
   if (intent.bachelorPad) parts.push("bachelor-pad feel");
   if (intent.preferredRegions.length) parts.push(`${intent.preferredRegions.join(" / ")} LA`);
   if (intent.commute) parts.push(`within ${intent.commute.maxMinutes} min drive of ${intent.commute.origin}`);

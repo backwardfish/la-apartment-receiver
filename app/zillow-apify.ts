@@ -56,9 +56,7 @@ export function actorInput(plan: ReturnType<typeof planRuns>[number], request: L
     fetchDetails: true,
     space: "entirePlace",
   };
-  // Use the provider keyword filter only when the user explicitly asks for a loft.
-  // Broader industrial/warehouse intent is graded from listing evidence after retrieval.
-  if (/\blofts?\b/i.test(request.query)) input.keywords = "loft";
+  // Retrieve broadly even for loft briefs; architectural evidence affects ranking only.
   if (request.intent.minBedrooms !== undefined && request.intent.minBedrooms > 0) input.minBeds = request.intent.minBedrooms;
   return input;
 }

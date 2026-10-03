@@ -164,7 +164,7 @@ export type Candidate = { index: number; listing: LiveListing | null; coordinate
 const GRADE_WEIGHT = { A: 6, B: 4, C: 1, D: 0 } as const;
 /**
  * Shared post-processing for every provider: hard requirements (rent, beds,
- * features, loft evidence when asked for, requested areas), de-duplication,
+ * features, requested areas), de-duplication,
  * and ranking. Ranking prefers stronger loft evidence for loft briefs, then
  * free-text term matches and regional hints, then distance to the area.
  */
@@ -176,8 +176,8 @@ export function rankCandidates(input: Candidate[], request: LiveSearchRequest): 
     .filter((item): item is Candidate & { listing: LiveListing } => item.listing !== null)
     .filter(({ listing }) => (request.intent.minRent === undefined || listing.rent >= request.intent.minRent) && (request.intent.maxRent === undefined || listing.rent <= request.intent.maxRent) && (request.intent.minBedrooms === undefined || listing.beds >= request.intent.minBedrooms))
     .filter(({ listing }) => request.intent.requiredFeatures.every((feature) => listing.features.includes(feature)))
-    // A loft brief excludes records with no loft evidence at all; weak evidence (grade C) stays but ranks last.
-    .filter(({ listing }) => !request.intent.warehouseStyle || (listing.warehouseSignals.length > 0 && listing.styleGrade !== "D"))
+    // Architectural character is a ranking preference. Missing evidence stays visible
+    // with a lower style score; rent, bedrooms, amenities, and geography remain hard limits.
     // Location is a hard requirement: a listing must fall inside one of the requested areas. Records without coordinates cannot qualify.
     .map(item => { const nearest = nearestArea(item.coordinate, areas); return nearest ? { ...item, listing: { ...item.listing, area: nearest.area.label, distanceMiles: Math.round(nearest.miles * 10) / 10 } } : item; })
     .filter(({ listing }) => !geoFilter || listing.area !== undefined)
