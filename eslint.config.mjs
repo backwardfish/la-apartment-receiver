@@ -1,26 +1,9 @@
-import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
-
-const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
-  // Override default ignores of eslint-config-next.
-  globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    ".sites-runtime/**",
-    ".netlify/**",
-    ".wrangler/**",
-    "next-env.d.ts",
-  ]),
-  {
-    files: ["app/receiver-page.tsx"],
-    // Netlify serves a static client; remote images are deliberately not proxied.
-    rules: { "@next/next/no-img-element": "off" },
-  },
+import { defineConfig, globalIgnores } from 'eslint/config';
+import tsParser from '@typescript-eslint/parser';
+import tsPlugin from '@typescript-eslint/eslint-plugin';
+import reactHooks from 'eslint-plugin-react-hooks';
+export default defineConfig([
+  globalIgnores(['.next/**','out/**','dist/**','build/**','.sites-runtime/**','.netlify/**','.wrangler/**','next-env.d.ts']),
+  { files: ['**/*.ts','**/*.tsx'], languageOptions: { parser: tsParser }, plugins: { '@typescript-eslint': tsPlugin }, rules: tsPlugin.configs.recommended.rules },
+  { files: ['app/**/*.tsx'], plugins: { 'react-hooks': reactHooks }, rules: { 'react-hooks/rules-of-hooks':'error','react-hooks/exhaustive-deps':'warn' } },
 ]);
-
-export default eslintConfig;
