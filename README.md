@@ -22,12 +22,12 @@ Use the Node version in `.nvmrc` (22.23.2) and npm 10.9.8:
 ```sh
 npm ci
 npm run verify
-npx --no-install netlify dev --offline --no-open
+npm run dev
 ```
 
-`verify` builds and exports the actual Netlify artifact, runs regression tests, lint, and TypeScript checks, checks for configured secrets in public output, and packages the functions. GitHub Actions performs it on Linux and macOS and audits the locked dependencies. No GNU `timeout` or personal shell symlink is required. Restart Netlify Dev after rebuilding so its script-policy headers match the new HTML.
+`verify` builds the native Next.js static export, copies it to `dist/client`, runs regression tests, lint, and TypeScript checks, checks for configured secrets in public output, and compiles the functions for Node 22 while checking exported routes and platform rate limits. Netlify performs final native function packaging. GitHub Actions performs it on Linux and macOS and audits the locked dependencies. No GNU `timeout` or personal shell symlink is required.
 
-Netlify Dev's local Blobs server does not return an ETag on reads, and the allowance fails closed without one, so a local `.env` with `LIVE_SEARCH_ENABLED=true` permits exactly one live search per local store. Delete `.netlify/blobs-serve` to reset it. Hosted Netlify Blobs return ETags; this is a local limitation only.
+`npm run dev` previews the UI. Native search functions run on Netlify; local UI previews do not establish hosted provider readiness. Production publication is Git-linked through protected `main`. The project does not install the Netlify CLI or a Cloudflare preview runtime.
 
 ## Production
 
