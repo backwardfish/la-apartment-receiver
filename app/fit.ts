@@ -1,3 +1,4 @@
+import { assessStyle } from "./style.ts";
 import type { LiveListing } from "./live-search.ts";
 import type { SearchIntent } from "./search-intent.ts";
 
@@ -24,4 +25,27 @@ export function scoreFit(
   const commuteFit = l.commute ? Math.max(0, 10 - Math.floor(l.commute.minutes / 6)) : 0;
   const cautionPenalty = l.cautions?.some((caution) => caution.startsWith("Short-term")) ? 10 : 0;
   return Math.max(1, Math.min(99, 40 + locationFit + styleFit + freshnessFit + commuteFit - cautionPenalty));
+}
+
+/** Snapshot cards must reflect the active brief, without claiming live freshness. */
+export function presentSnapshot<T extends {
+  title: string; features: string[]; fit: number; why: string[]; unknowns: string[];
+  warehouseSignals?: string[]; styleGrade?: import('./style.ts').StyleGrade; yearBuilt?: number;
+}>(listing: T, intent: SearchIntent): T {
+  const style = assessStyle([listing.title, ...listing.features, ...(listing.warehouseSignals ?? [])].join(' '), listing.yearBuilt);
+  const why = [
+    'Research snapshot; current availability is unconfirmed',
+    ...(intent.maxRent !== undefined ? [`Within your $${intent.maxRent.toLocaleString('en-US')} ceiling`] : []),
+    ...(intent.minRent !== undefined ? [`Meets your $${intent.minRent.toLocaleString('en-US')} minimum`] : []),
+    ...intent.requiredFeatures.filter(feature => listing.features.includes(feature)).map(feature => `${feature} is represented in the source`),
+    ...(style.grade !== 'D' ? [`Style ${style.grade}: ${style.signals.join(' · ')}`] : []),
+  ];
+  return {
+    ...listing,
+    warehouseSignals: style.signals,
+    styleGrade: style.grade,
+    fit: scoreFit({ warehouseSignals: style.signals, styleGrade: style.grade, freshness: 'needs-verification' }, intent),
+    why,
+    unknowns: [...new Set([...listing.unknowns, 'Current availability needs confirmation', ...(intent.warehouseStyle && style.grade === 'D' ? ['No loft or industrial evidence in the snapshot'] : [])])],
+  };
 }
