@@ -39,9 +39,11 @@ export const SEARCH_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 /** Cache complete ranked results only for the same normalized scope and ranking intent. */
-export function cacheKeyFor(intent: SearchIntent, query = ""): string {
+export function cacheKeyFor(intent: SearchIntent, _query = ""): string {
+  // Retain the query argument for existing callers; parsed intent defines cache identity.
+  void _query;
   const canonical = JSON.stringify({
-    version: 3,
+    version: 4,
     locations: [...new Set(intent.locations)].sort(),
     searchTerms: [...intent.searchTerms].sort(),
     bachelorPad: intent.bachelorPad,
@@ -51,7 +53,6 @@ export function cacheKeyFor(intent: SearchIntent, query = ""): string {
     minBedrooms: intent.minBedrooms ?? null,
     features: [...intent.requiredFeatures].sort(),
     warehouseStyle: intent.warehouseStyle,
-    providerKeyword: /\blofts?\b/i.test(query) ? "loft" : null,
     commute: intent.commute ?? null,
   });
   return createHash('sha256').update(canonical).digest('hex').slice(0, 32);

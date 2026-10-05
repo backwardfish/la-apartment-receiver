@@ -11,7 +11,7 @@ A source-linked Los Angeles rental research workspace. The LA-only MVP uses a re
 
 > **Known blocker for the RentCast source (confirmed 2026-09-15).** RentCast's published rental-listing schema contains no listing URL, photos, description, or neighborhood ([schema](https://developers.rentcast.io/reference/property-listings-schema)). The adapter's evidence gate therefore rejects every real RentCast record (`tests/providers.test.mjs`, "KNOWN BLOCKER"), and loft/warehouse detection has no text to read. Live search cannot return results until a source that supplies listing links, photos, and descriptions is approved, or the evidence contract is deliberately changed. Do not relax the gate to make a search "work".
 
-For the MVP, geography is structured rather than inferred from prose. The UI requires one to five distinct supported LA neighborhoods from the shared registry in `app/neighborhoods.ts`; API validation, provider coordinates, post-filtering, display labels, and tests all consume that same registry. Free text is reserved for budget, bedrooms, amenities, and style. A brief that asks for a loft or warehouse only shows listings whose own description carries that evidence; a short honest list is preferred to a padded one.
+For the MVP, geography is structured rather than inferred from prose. The UI requires one to five distinct supported LA neighborhoods from the shared registry in `app/neighborhoods.ts`; API validation, provider coordinates, post-filtering, display labels, and tests all consume that same registry. Free text is reserved for budget, bedrooms, amenities, and style. Loft and warehouse character are ranking preferences. Discovery does not require those words, and listings without architectural evidence stay visible with lower style scores and an explicit uncertainty. Rent, bedrooms, requested amenities, and selected geography remain hard limits.
 
 When live search is unavailable, the interface explicitly labels the research snapshot. A missing Google Routes key permits only the documented Santa Monica neighborhood estimates; their upper bound must meet the requested cutoff. Other commute destinations require Routes. Estimates are labeled without a live-traffic claim.
 
@@ -22,12 +22,12 @@ Use the Node version in `.nvmrc` (22.23.2) and npm 10.9.8:
 ```sh
 npm ci
 npm run verify
-npx --no-install netlify dev --offline --no-open
+npm run dev
 ```
 
-`verify` builds and exports the actual Netlify artifact, runs regression tests, lint, and TypeScript checks, checks for configured secrets in public output, and packages the functions. GitHub Actions performs it on Linux and macOS and audits the locked dependencies. No GNU `timeout` or personal shell symlink is required. Restart Netlify Dev after rebuilding so its script-policy headers match the new HTML.
+`verify` builds the native Next.js static export, copies it to `dist/client`, runs regression tests, lint, and TypeScript checks, checks for configured secrets in public output, and compiles the functions for Node 22 while checking exported routes and platform rate limits. Netlify performs final native function packaging. GitHub Actions performs it on Linux and macOS and audits the locked dependencies. No GNU `timeout` or personal shell symlink is required.
 
-Netlify Dev's local Blobs server does not return an ETag on reads, and the allowance fails closed without one, so a local `.env` with `LIVE_SEARCH_ENABLED=true` permits exactly one live search per local store. Delete `.netlify/blobs-serve` to reset it. Hosted Netlify Blobs return ETags; this is a local limitation only.
+`npm run dev` previews the UI. Native search functions run on Netlify; local UI previews do not establish hosted provider readiness. Production publication is Git-linked through protected `main`. The project does not install the Netlify CLI or a Cloudflare preview runtime.
 
 ## Production
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { scoreFit } from "../app/fit.ts";
+import { scoreFit, presentSnapshot } from "../app/fit.ts";
 import { parseSearchIntent } from "../app/search-intent.ts";
 
 const loftBrief = parseSearchIntent("warehouse loft near the Arts District");
@@ -23,4 +23,20 @@ test("fit without a requested area or style stays modest and freshness still mat
   assert.equal(live, 60);
   assert.equal(unknown, 50);
   assert.equal(scoreFit({ warehouseSignals: [], freshness: "live", commute: { origin: "santa monica", minutes: 12, verifiedAt: "2026-09-15T00:00:00Z" } }, openBrief), 68);
+});
+
+
+test("snapshot fit and uncertainty follow the active loft brief instead of preset marketing scores", () => {
+  const intent = { raw: 'Industrial loft with parking', warehouseStyle: true, locations: [], requiredFeatures: ['Parking'], maxRent: 3500 };
+  const generic = { title: 'Conventional one bedroom', features: ['Parking'], fit: 94, why: ['Under your $2,800 ceiling'], unknowns: [] };
+  const loft = { ...generic, title: 'Converted warehouse loft with exposed brick', fit: 78 };
+  const first = presentSnapshot(generic, intent);
+  const second = presentSnapshot(loft, intent);
+  assert.ok(first.fit < second.fit);
+  assert.ok(first.fit < 60);
+  assert.ok(first.unknowns.includes('No loft or industrial evidence in the snapshot'));
+  assert.ok(first.why.includes('Within your $3,500 ceiling'));
+  assert.ok(!first.why.some(reason => reason.includes('2,800')));
+  assert.ok(!second.unknowns.some(reason => reason.startsWith('No loft')));
+  assert.equal(second.styleGrade, 'A');
 });

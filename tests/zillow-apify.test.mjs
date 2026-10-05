@@ -57,7 +57,7 @@ test("plans exactly one bounded actor run for the selected MVP neighborhood", ()
   assert.equal(broadInput.operation, "rent"); assert.equal(broadInput.keywords, undefined); assert.equal(broadInput.fetchDetails, true);
   assert.ok(broadInput.distanceMiles >= 1 && broadInput.maxItems === MAX_ITEMS_PER_RUN);
   const loftInput = actorInput(plans[0], buildLiveSearchRequest("warehouse loft under $3,500", "arts district"));
-  assert.equal(loftInput.keywords, "loft");
+  assert.equal(loftInput.keywords, undefined, "loft wording must not narrow fetched inventory");
   assert.equal(MAX_RUNS, 5);
   assert.throws(() => planRuns(buildLiveSearchRequest("loft near UCLA, USC, or Arts District")), /1 to 5 distinct supported neighborhoods/);
 });
@@ -76,11 +76,11 @@ test("starts runs with a bearer token, never in the URL, and polls to ranked res
   assert.equal(runs.length, 1);
   for (const call of calls) { assert.doesNotMatch(call.url, /secret-token/); assert.equal(call.init.headers.authorization, "Bearer secret-token"); assert.equal(call.init.redirect, "error"); }
   const startBody = JSON.parse(calls[0].init.body);
-  assert.equal(startBody.keywords, "loft");
+  assert.equal(startBody.keywords, undefined);
   assert.match(calls[0].url, /maxTotalChargeUsd=0\.5/);
   const result = await pollZillowRuns(runs, request, { apifyToken: "secret-token" }, fetcher, now);
   assert.equal(result.status, "done");
-  // Under $3,500, inside the Arts District circle, loft evidence required: Hewitt (A) first, then RiverFront (B). Savoy (D) and Westwood are out.
+  // Budget and geography stay strict; architectural evidence determines ranking.
   assert.deepEqual(result.results.map((listing) => [listing.title, listing.styleGrade]), [["130 S Hewitt St APT 31", "A"], ["201 S Santa Fe Ave Suite 211", "B"]]);
   assert.equal(result.results[0].area, "Arts District");
   assert.equal(result.usageUsd, 0.021);
@@ -121,7 +121,7 @@ test("plans five bounded runs, waits for every area, deduplicates overlaps, and 
   const result = await pollZillowRuns(runs, request, { apifyToken:'test' }, fetcher, now);
   assert.equal(result.status, 'done');
   assert.equal(result.usageUsd, 0.1);
-  assert.deepEqual(result.results.map(listing=>listing.title), ['130 S Hewitt St APT 31','201 S Santa Fe Ave Suite 211']);
+  assert.deepEqual(result.results.map(listing=>listing.title), ['130 S Hewitt St APT 31','201 S Santa Fe Ave Suite 211','1375 Midvale Ave APT 313']);
   assert.equal(new Set(result.results.map(listing=>listing.id)).size, result.results.length);
 });
 

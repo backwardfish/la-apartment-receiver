@@ -56,7 +56,7 @@ test('cache keys include ranking words as well as areas, budget, features, and s
   const apartment = 'apartment in Arts District under $3,500';
   assert.notEqual(cacheKeyFor(parseSearchIntent(apartment), apartment), base);
   const warehouseOnly = 'warehouse conversion in Arts District under $3,500';
-  assert.notEqual(cacheKeyFor(parseSearchIntent(warehouseOnly), warehouseOnly), base, 'provider keyword mode changes fetched inventory');
+  assert.equal(cacheKeyFor(parseSearchIntent(warehouseOnly), warehouseOnly), base, 'equivalent architectural preferences share broad inventory');
   assert.equal(isFreshRecord({ status: 'done', completedAt: new Date(Date.now() - 5 * 3600_000).toISOString() }), true);
   assert.equal(isFreshRecord({ status: 'done', completedAt: new Date(Date.now() - 7 * 3600_000).toISOString() }), false);
 });
@@ -176,7 +176,8 @@ test('multi-area API preserves all areas through status, counts run allowance, a
   const done = await createSearchStatusHandler(() => store, apify.fetcher)(status(pending.searchId), context);
   assert.equal(done.status, 200);
   const results = (await done.json()).results;
-  assert.equal(results.length, 2);
+  assert.equal(results.length, 3);
+  assert.ok(results.some(listing => listing.styleGrade === "D"), "a listing without architectural evidence stays eligible");
   assert.equal(new Set(results.map(listing=>listing.id)).size, results.length);
   const calls = apify.calls.length;
   assert.equal((await search(request(['arts district','ucla']), context)).status, 200);

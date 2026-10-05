@@ -108,12 +108,15 @@ test("loft descriptors such as exposed brick and high ceilings count as warehous
   assert.equal(parseSearchIntent("quiet one bedroom with parking").warehouseStyle, false);
 });
 
-test("a loft brief hides generic snapshot listings instead of ranking them as strong matches", () => {
+test("a loft brief keeps generic listings and ranks architectural evidence first", () => {
   const snapshot = [
     ...fixtures,
     { title: "Studio loft with two parking spaces in Hollywood", neighborhood: "Hollywood", city: "Los Angeles", rent: 2050, beds: 0, features: ["Parking", "Laundry"] },
   ];
-  assert.deepEqual(tailorListings(snapshot, parseSearchIntent("Industrial loft with parking")).map((listing) => listing.title), ["Studio loft with two parking spaces in Hollywood"]);
+  const results = tailorListings(snapshot, parseSearchIntent("Industrial loft with parking"));
+  assert.equal(results[0].title, "Studio loft with two parking spaces in Hollywood");
+  assert.equal(results.length, 3, "generic parking matches survive the style preference");
+  assert.equal(tailorListings(snapshot, parseSearchIntent("loft in West Hollywood"))[0].title, fixtures[0].title);
   assert.deepEqual(tailorListings(snapshot, parseSearchIntent("loft in Arts District")), []);
   assert.equal(tailorListings(snapshot, parseSearchIntent("parking")).length, 3);
 });

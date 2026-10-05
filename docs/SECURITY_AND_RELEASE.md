@@ -5,15 +5,15 @@
 | Setting | Local and CI | Netlify preview | Netlify production |
 |---|---|---|---|
 | Node build version | `.nvmrc`: 22.23.2 | 22.23.2 | 22.23.2 |
-| npm / CLI | 10.9.8 / locked Netlify CLI 27.5.2 | Same lockfile | Same lockfile |
+| npm / CLI | 10.9.8 / native static export; Git-linked deployment | Same lockfile | Same lockfile |
 | Install and verification | `npm ci`, `npm run verify` | Same | Same; clean tracked tree required |
 | Output / functions | `dist/client` / `netlify/functions` | Same | Same |
 | Function runtime | Local Node 22 | `nodejs22.x` | `nodejs22.x`; hosted patch managed by Netlify |
 | Provider credentials | Synthetic tests; optional local `.env` | No production values; separate preview keys only if needed | Production-specific RentCast and optional Routes values |
-| Next.js integration | Custom Vinext static export | `NETLIFY_NEXT_PLUGIN_SKIP=true` | Same; no Next.js server is deployed |
+| Next.js integration | Native Next.js static export | `NETLIFY_NEXT_PLUGIN_SKIP=true` | Same; no Next.js server is deployed |
 | Routes | Native paths under Netlify Dev | `/api/search`, `/api/health` | Same |
 
-`dist/server` is a build-time rendering input, not the publish directory. Public artifact checks cover `dist/client`. Keep `.env`, `.netlify`, runtime caches, and generated release files out of Git.
+`out` is the prerendered static export, copied to `dist/client`; no Next.js server or Cloudflare Worker is deployed. Public artifact checks cover `dist/client`. Keep `.env`, `.netlify`, runtime caches, and generated release files out of Git.
 
 HTML post-processing is disabled so generated inline scripts retain their CSP hashes. Restart Netlify Dev after rebuilding: a running local server can retain an older `_headers` configuration while serving the new HTML. Verify all inline hashes against the headers of the deployed response, not only the files on disk.
 
@@ -51,16 +51,14 @@ Logs contain fixed error categories (including provider HTTP status) and a reque
 
 ## Release procedure
 
-1. Open a pull request. Required `release-gate` checks both Linux and macOS production builds, regression tests, lint, TypeScript, dependency audits, native function packaging, and the pinned Gitleaks scan. Actions are pinned to commits using the supported Node 24 action runtime; the application still builds/runs on Node 22. `main` disallows direct/force pushes and deletion, including administrator bypass. The single-owner configuration requires a PR but zero independent reviewer approvals; do not call this independent review.
+1. Open a pull request. Required `release-gate` checks both Linux and macOS production builds, regression tests, lint, TypeScript, dependency audits, Node 22 function compilation, route/rate-limit checks, and hosted native packaging, and the pinned Gitleaks scan. Actions are pinned to commits using the supported Node 24 action runtime; the application still builds/runs on Node 22. `main` disallows direct/force pushes and deletion, including administrator bypass. The single-owner configuration requires a PR but zero independent reviewer approvals; do not call this independent review.
 2. Merge only after required checks pass. Git-linked Netlify production builds protected `main` using `npm run verify`; a failed build must not replace the current deploy. Preview builds never receive production provider values.
 3. Record full commit SHA, CI run URL, Netlify deploy ID/time, and previous deploy ID. Compare `/release.json`, `/api/health`, Netlify `commit_ref`, and the selected Git revision. `release.dirty` must be false. The search response's `x-receiver-release` must match.
 4. Check safe invalid requests, a bounded live search, source links/images, truthful fallback labels, save/reload/clear, and desktop/mobile behavior. Verify a 45-minute Santa Monica cutoff with passing and failing upper-bound examples. A deploy marked ready does not prove valid provider credentials.
 5. Exercise rate rejection with invalid requests so testing does not use paid provider calls. Check native/custom paths and spoofed client headers. Netlify Dev does not prove edge enforcement; test a deployed environment.
 6. `/api/health?readiness=1` performs read-only reachability checks against both Blob stores without consuming a reservation. `/api/health?readiness=1&provider=1` also performs a zero-cost authenticated read of the configured Apify Actor, proving the hosted token and Actor selection are usable without starting a scrape. It returns only fixed readiness booleans/labels, never credentials or provider bodies. Plain `/api/health` remains a liveness/revision check. Both use a 30-per-minute IP/domain platform limit.
 
-Emergency manual release uses pinned `npm run deploy:production` from a clean, reviewed revision with passing CI and the correct linked site. It verifies before deploying; record the same provenance. Routine deployment must not depend on temporary MCP proxy URLs.
-
-Production verification rejects both tracked edits and untracked, non-ignored files. Before a manual release, confirm `netlify status` identifies site `4bd1b1c3-86b8-4c04-8944-fd150a1c56aa` and `git rev-parse HEAD` equals the reviewed GitHub main revision. Do not pass secret values on the command line.
+Routine releases use the protected-main Git deployment. The project does not install a deployment CLI. Record the deployed commit and Netlify deploy provenance through the hosting integration and public release/health endpoints; keep production credentials in Netlify.
 
 After each main merge, the `production-smoke` CI job waits at most ten minutes for that exact revision and runs `scripts/smoke-production.mjs`. Its default mode checks live headers, all inline CSP hashes, image origins, storage reachability, release parity, and invalid-request boundaries. It constructs no valid provider request. Failure reports a deployment problem without replacing a production release. If intentionally paused, an operator can additionally run `node scripts/smoke-production.mjs https://la-apartment-receiver.netlify.app <full-sha> --expect-paused`; this adds exactly one valid search request and requires 503 / `search_paused`.
 
@@ -98,3 +96,7 @@ Run `npm audit` and `npm audit --omit=dev`, trace findings to their owning tool,
 The September 2026 patch set updates Next/React/Vite and compatible transitive dependencies, and pins patched Sharp 0.35.4. Vinext 1.0.0-beta.9 removes the unpatched image-size dependency; its matching RSC plugin is 0.5.34. The legacy Drizzle loader overrides esbuild to the same patched 0.25.12 line already used by Drizzle Kit; synchronous and asynchronous TypeScript execution are regression-tested. The full dependency audit now passes with zero findings, and CI rejects moderate-or-higher findings. Vinext remains prerelease software: preserve the full static-export, browser, and function checks when updating it.
 
 References: [Netlify rate limits](https://docs.netlify.com/manage/security/secure-access-to-sites/rate-limiting/), [Blobs storage](https://docs.netlify.com/build/data-and-storage/netlify-blobs/), [conditional-write SDK issue](https://github.com/netlify/primitives/issues/741), [environment contexts/scopes](https://docs.netlify.com/build/environment-variables/overview/), [GitHub branch protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches), [Google API key restrictions](https://developers.google.com/maps/api-security-best-practices).
+
+## October 2026 dependency remediation
+
+The release removes unused Vinext/Cloudflare preview dependencies, the Netlify CLI and local ZIP packager, and the Next-specific ESLint dependency chain. These introduced unpatched `braces` and `node-forge` advisories through build/development tools. The app now uses native Next.js static export with the same Receiver React page and Netlify functions. Next.js is updated to 16.3.8. The locked dependency audit continues to reject moderate-or-higher findings without exceptions. Function compilation still validates all three exported native paths and their rate limits; Netlify performs the final hosted bundle. Release parity, CSP hash checks, secret scanning, and the live smoke test remain required.
