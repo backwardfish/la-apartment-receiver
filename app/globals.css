@@ -169,3 +169,17 @@ button:disabled { cursor: wait; opacity: .65; }
   .card-source-action { min-height: 44px; font-size: 11px; }
   .primary-source-link { min-height: 48px; }
 }
+/* The pilot shares listing cards, shortlist, comparison, and evidence drawers. */
+.direct-pilot { margin: 0 0 22px; }
+.direct-heading p { color: #657169; font-size: 14px; line-height: 1.6; max-width: 760px; }
+.direct-region { min-width: 165px; padding: 12px; color: #5b685f; font-size: 12px; }
+.direct-region select { display: block; margin-top: 8px; width: 100%; border: 1px solid #d9dfda; background: #fff; border-radius: 6px; padding: 8px; color: #263d30; }
+.direct-status { margin: 18px 0 10px; font-size: 14px; color: #2d5743; }
+.direct-source-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.direct-source-list > div { padding: 15px; border: 1px solid #dbe3dc; border-radius: 8px; background: #f2f6f1; }
+.direct-source-list a { display: block; color: #2d6349; font-size: 13px; font-weight: 600; }
+.direct-source-list span, .direct-source-list time { display: block; font-size: 11px; color: #69736d; line-height: 1.7; margin-top: 5px; }
+.direct-note, .listing-checked { font-size: 11px; color: #737d75; line-height: 1.6; }
+.direct-note { margin-top: 12px; }
+[hidden] { display: none !important; }
+@media (max-width: 700px) { .direct-source-list { grid-template-columns: 1fr; } .direct-search { flex-direction: column; } .direct-region { width: 100%; } }
