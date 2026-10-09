@@ -45,6 +45,20 @@ for (const directive of ["object-src 'none'", "base-uri 'none'", "frame-ancestor
 const imageHosts = csp.match(/(?:^|;\s*)img-src ([^;]+)/)?.[1].split(/\s+/) ?? [];
 assert.deepEqual(new Set(imageHosts), new Set(["'self'", ...origins.images.flatMap(host => [`https://${host}`, `https://*.${host}`])]));
 const html = await page.text();
+assert.match(html, /Direct sources/);
+const directResponse = await request('/api/direct-sources');
+assert.equal(directResponse.status, 200, 'Direct-source pilot must return live or recent evidence');
+assert.equal(directResponse.headers.get('x-receiver-release'), revision);
+const direct = await directResponse.json();
+assert.equal(direct.status, 'ok');
+assert.equal(direct.sources.length, 2);
+assert.ok(direct.sources.every(source => ['checked','cached'].includes(source.status) && source.count > 0 && Number.isFinite(Date.parse(source.checkedAt))), 'Both local managers must be readable');
+assert.ok(direct.results.length > 0, 'Pilot should contain testable units');
+assert.ok(direct.results.every(listing => listing.id.startsWith('direct:') && listing.rent <= 3500 && /^https:\/\/(lapmg|orangecountypm)\.appfolio\.com\/listings\/detail\//.test(listing.sourceUrl) && /^https:\/\/images\.cdn\.appfolio\.com\//.test(listing.image)));
+const ocResponse = await request('/api/direct-sources', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query:'one bedroom under $3,000',region:'oc'})});
+assert.equal(ocResponse.status, 200);
+const oc = await ocResponse.json();
+assert.ok(oc.results.length > 0 && oc.results.every(listing => listing.county === 'oc' && listing.rent <= 3000 && listing.beds >= 1), 'OC scope, budget, and bedroom requirements must hold');
 const hashes = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
   .filter(([, attributes, body]) => !/\bsrc=/.test(attributes) && body.trim())
   .map(([, , body]) => `'sha256-${createHash('sha256').update(body).digest('base64')}'`);
@@ -53,6 +67,8 @@ assert.deepEqual(new Set(scripts.match(/'sha256-[^']+'/g)), new Set(hashes), 'Se
 
 // Every default search request is invalid before credential access or reservation.
 const checks = [
+  { name:'direct invalid scope', path:'/api/direct-sources',init:{method:'POST',headers:{'content-type':'application/json'},body:'{"query":"loft","region":"unknown"}'},expected:400 },
+  { name:'direct wrong method', path:'/api/direct-sources',init:{method:'DELETE'},expected:405 },
   { name:'invalid query', path:'/api/search', init:{ method:'POST', headers:{'content-type':'application/json'}, body:'{"query":""}' }, expected:400 },
   { name:'missing neighborhood', path:'/api/search', init:{ method:'POST', headers:{'content-type':'application/json'}, body:'{"query":"loft"}' }, expected:400 },
   { name:'invalid neighborhood', path:'/api/search', init:{ method:'POST', headers:{'content-type':'application/json'}, body:'{"query":"loft","neighborhood":"not-real"}' }, expected:400 },

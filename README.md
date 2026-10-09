@@ -53,3 +53,12 @@ Saving and comparison toggles are research aids. They do not contact a landlord 
 The legacy `neighborhood` string remains supported. Send only one form; empty, duplicate, unknown, and more-than-five selections return 400 before paid work. Selection order does not change cache identity. This does not add LA-wide search.
 
 Each Zillow area consumes one allowance unit, atomically reserved before any run starts. Partial starts are aborted where possible and are never returned as a complete search. Failed runs retain their allowance. Browser workspace v5 migrates v4 single-area searches and preserves saved listings; server v2 records remain pollable alongside v3 multi-area records.
+# Direct-source discovery pilot
+
+The default **Direct sources** view reads public unit listings from L.A. Property Management Group and Orange County Property Management's AppFolio rental pages. It supports LA/OC county scope, rent bounds, bedrooms, required amenities, named supported LA neighborhoods and OC cities, and architectural preference ranking. Existing Zillow search remains accessible in the sidebar.
+
+`/api/direct-sources` fetches only two fixed, verified URLs, in parallel with 12-second timeouts and 2 MB response limits. It parses explicit index fields and map coordinates without executing source scripts. Listings require a California city/ZIP combination inside the curated county coverage, a positive rent, bed/bath fields, source photograph, and exact unit link. Incomplete records are omitted. This is a two-manager pilot, not complete county inventory; source descriptions may be abbreviated and pricing can exclude fees.
+
+Inventory is cached in a deploy-scoped Netlify Blobs store for six hours, independently of the user's brief, then re-filtered on each request. Reads trigger refresh after expiry. A failed source is reported independently; previous evidence is shown as stale for at most 24 hours with its original check time. No research snapshot is substituted. All-source failure returns an explicit unavailable response. The pilot uses no paid listing API or Zillow allowance and stores no user queries in the source cache.
+
+Direct listings use the same shortlist, comparison, URL allowlist, and evidence drawers as existing results. Production smoke checks both sources, exact links, county and price/bedroom constraints, and function/client revision parity.

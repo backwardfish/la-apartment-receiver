@@ -33,20 +33,20 @@
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "drizzle-kit": "0.31.10",
-    "eslint": "9.39.4",
-    "tailwindcss": "4.2.1",
-    "typescript": "5.9.3",
-    "@typescript-eslint/parser": "8.59.3",
     "@typescript-eslint/eslint-plugin": "8.59.3",
+    "@typescript-eslint/parser": "8.59.3",
+    "drizzle-kit": "0.31.10",
+    "esbuild": "0.28.1",
+    "eslint": "9.39.4",
     "eslint-plugin-react-hooks": "7.1.1",
-    "esbuild": "0.28.1"
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3"
   },
   "type": "module",
   "displayName": "LA Apartment Receiver",
   "packageManager": "npm@10.9.8",
   "overrides": {
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "@esbuild-kit/core-utils": {
       "esbuild": "0.25.12"
     }
