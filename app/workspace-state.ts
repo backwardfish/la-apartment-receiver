@@ -1,3 +1,4 @@
+import { FEEDBACK_REASONS, type ListingFeedback } from "./listing-feedback.ts";
 import { trustedUrl } from './security-urls.ts';
 import { isNeighborhoodKey, isNeighborhoodSelection, normalizeNeighborhoodSelection, type NeighborhoodKey } from './neighborhoods.ts';
 
@@ -18,9 +19,10 @@ export type Workspace = {
   activeNeighborhoods?: NeighborhoodKey[];
   liveListings: PersistedListing[] | null;
   retainedListings?: PersistedListing[];
+  feedback?: ListingFeedback[];
 };
-export const STORAGE_KEY = 'receiver:workspace:v5';
-const LEGACY_KEYS = ['receiver:workspace:v4', 'receiver:workspace:v3', 'receiver:workspace:v2'];
+export const STORAGE_KEY = 'receiver:workspace:v6';
+const LEGACY_KEYS = ['receiver:workspace:v5', 'receiver:workspace:v4', 'receiver:workspace:v3', 'receiver:workspace:v2'];
 const MAX_BYTES = 500_000;
 const RETENTION_MS = 30 * 86_400_000;
 function text(value: unknown): value is string { return typeof value === 'string' && value.length <= 2048; }
@@ -59,6 +61,16 @@ export function sanitizePersistedListings(value: unknown): PersistedListing[] | 
   }
   return result;
 }
+export function sanitizeFeedback(value: unknown): ListingFeedback[] {
+  if (!Array.isArray(value)) return [];
+  const result: ListingFeedback[] = [];
+  for (const item of value.slice(0, 100)) {
+    if (!item || !FEEDBACK_REASONS.includes(item.reason)) continue;
+    const listing = sanitizePersistedListings([item.listing])?.[0];
+    if (listing && !result.some(entry => entry.listing.sourceUrl === listing.sourceUrl || entry.listing.id === listing.id)) result.push({ listing, reason: item.reason });
+  }
+  return result;
+}
 /** Keep the evidence for selected listings independently of the current search. */
 export function retainWorkspaceListings(previous: PersistedListing[], current: PersistedListing[], ids: string[]): PersistedListing[] {
   const byId = new Map([...previous, ...current].map(listing => [listing.id, listing]));
@@ -80,9 +92,9 @@ export function restoreWorkspace(snapshots: PersistedListing[], now=Date.now()):
     if(!raw)return null;
     if(new TextEncoder().encode(raw).length>MAX_BYTES){clearWorkspace();return null;}
     const value=JSON.parse(raw);
-    if(!value||![2,3,4,5].includes(value.version))return null;
+    if(!value||![2,3,4,5,6].includes(value.version))return null;
     if(value.version>=3&&(!finite(value.savedAt)||value.savedAt>now+300000||now-value.savedAt>RETENTION_MS)){clearWorkspace();return null;}
-    const activeNeighborhoods=value.version===5
+    const activeNeighborhoods=value.version>=5
       ? (isNeighborhoodSelection(value.activeNeighborhoods)?normalizeNeighborhoodSelection(value.activeNeighborhoods):undefined)
       : (isNeighborhoodKey(value.activeNeighborhood)?[value.activeNeighborhood]:undefined);
     const activeNeighborhood=activeNeighborhoods?.length===1?activeNeighborhoods[0]:undefined;
@@ -93,7 +105,8 @@ export function restoreWorkspace(snapshots: PersistedListing[], now=Date.now()):
     const allowed=new Set([...snapshots,...(restoredLiveListings??[]),...retainedListings].map(l=>l.id));
     const saved=validWorkspaceIds(value.saved,allowed),compare=validWorkspaceIds(value.compare,allowed,3);
     const retained=retainWorkspaceListings(retainedListings,[...snapshots,...(restoredLiveListings??[])],[...saved,...compare]);
-    return {liveListings,retainedListings:retained,saved,rejected:activeNeighborhoods?validWorkspaceIds(value.rejected,allowed):[],compare,activeQuery:activeNeighborhoods&&typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):'',activeNeighborhood,activeNeighborhoods};
+    const feedback=sanitizeFeedback(value.feedback);
+    return {feedback,liveListings,retainedListings:retained,saved,rejected:activeNeighborhoods?validWorkspaceIds(value.rejected,allowed):[],compare,activeQuery:activeNeighborhoods&&typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):'',activeNeighborhood,activeNeighborhoods};
   } catch { clearWorkspace();return null; }
 }
 export function persistWorkspace(workspace: Workspace, now=Date.now()): boolean {
@@ -104,7 +117,8 @@ export function persistWorkspace(workspace: Workspace, now=Date.now()): boolean 
     const activeNeighborhoods=workspace.activeNeighborhoods!==undefined
       ? (isNeighborhoodSelection(workspace.activeNeighborhoods)?normalizeNeighborhoodSelection(workspace.activeNeighborhoods):undefined)
       : (isNeighborhoodKey(workspace.activeNeighborhood)?[workspace.activeNeighborhood]:undefined);
-    const clean={version:5,savedAt:now,saved,rejected:workspace.rejected.slice(0,100),compare,activeQuery:workspace.activeQuery.slice(0,500),activeNeighborhoods,liveListings,retainedListings};
+    const feedback=sanitizeFeedback(workspace.feedback);
+    const clean={version:6,feedback,savedAt:now,saved,rejected:workspace.rejected.slice(0,100),compare,activeQuery:workspace.activeQuery.slice(0,500),activeNeighborhoods,liveListings,retainedListings};
     const raw=JSON.stringify(clean);if(new TextEncoder().encode(raw).length>MAX_BYTES)return false;
     const s=storage();if(!s)return false;s.setItem(STORAGE_KEY,raw);for(const key of LEGACY_KEYS)s.removeItem(key);return true;
   } catch { return false; }

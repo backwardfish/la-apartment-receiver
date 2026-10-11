@@ -62,3 +62,11 @@ The default **Direct sources** view reads public unit listings from L.A. Propert
 Inventory is cached in a deploy-scoped Netlify Blobs store for six hours, independently of the user's brief, then re-filtered on each request. Reads trigger refresh after expiry. A failed source is reported independently; previous evidence is shown as stale for at most 24 hours with its original check time. No research snapshot is substituted. All-source failure returns an explicit unavailable response. The pilot uses no paid listing API or Zillow allowance and stores no user queries in the source cache.
 
 Direct listings use the same shortlist, comparison, URL allowlist, and evidence drawers as existing results. Production smoke checks both sources, exact links, county and price/bedroom constraints, and function/client revision parity.
+
+## Personal feedback
+
+Cards and the detail drawer offer **Not interested**. Hidden listings are suppressed from discovery, shortlist, and comparison by listing ID or canonical source URL. They remain available in **Hidden**, with immediate Undo and Restore; an optional reason can target price, location, style, layout, or amenities. Hiding removes the unit from saved/compared selections.
+
+The browser applies a reversible ranking adjustment, bounded to ±8 fit points, using similarities to hidden evidence and saved references. An unspecified hide requires several shared traits and has weaker influence; explicit reasons target only that trait. Missing amenities/style evidence is not invented, and hard search requirements remain unchanged. Personalization only orders the retrieved candidates; it does not broaden inventory or train an external model. The card's reasons disclose any adjustment.
+
+Feedback uses the existing browser-only workspace policy: 100 hidden references, allowlisted fields and outbound URLs, 500 KB storage limit, 30 days without use before expiry, no cross-device sync. Version 6 migrates existing saved references without creating preference feedback. Restoring removes negative influence; unsaving removes positive influence; clearing the workspace resets both.
