@@ -295,3 +295,8 @@ button,input,select,textarea { accent-color:var(--green); }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } .listing-card:hover { transform:none; } }
 
 .card-image .source-chip { max-width:calc(100% - 154px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.feedback-note { color: #abb8d4; font-size: 13px; line-height: 1.6; margin: 16px 0; }
+.hide-action { border: 1px solid #654466; color: #eea5ce; }
+.feedback-reason { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #abb8d4; font-size: 12px; }
+.feedback-reason select { background: #171e36; border: 1px solid #695478; color: #e9eefd; padding: 8px; max-width: 100%; }
+.toast button { border: 1px solid #695478; padding: 6px 10px; color: #65eadc; background: #171e36; }
