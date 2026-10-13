@@ -40,7 +40,7 @@ test('hidden feedback survives unrelated searches and reload, then undo and clea
  try {
   const workspace={saved:[],compare:[],rejected:[],activeQuery:'different search',liveListings:[],feedback:[{listing,reason:'Style'}]};
   assert.ok(persistWorkspace(workspace));
-  assert.equal(JSON.parse(data.get(STORAGE_KEY)).version,6);
+  assert.equal(JSON.parse(data.get(STORAGE_KEY)).version,7);
   const restored=restoreWorkspace([]);
   assert.ok(isHidden({...listing,id:'new-id'},restored.feedback));
   assert.ok(preferenceAdjustment(other,restored.feedback,[])<0);

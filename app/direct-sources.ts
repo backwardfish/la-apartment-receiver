@@ -10,6 +10,9 @@ import { estimateCommuteToSantaMonica, estimatePassesLimit, isSantaMonicaCommute
 export const DIRECT_SOURCES = [
   { id: 'lapmg', name: 'L.A. Property Management Group', url: 'https://lapmg.appfolio.com/listings/listings' },
   { id: 'orangecountypm', name: 'Orange County Property Management', url: 'https://orangecountypm.appfolio.com/listings/listings' },
+  { id: 'mcmpropertymanagement', name: 'MCM Property Management', url: 'https://mcmpropertymanagement.appfolio.com/listings/listings' },
+  { id: 'dtlamanagement', name: 'DTLA Management', url: 'https://dtlamanagement.appfolio.com/listings/listings' },
+  { id: 'lidopm', name: 'Lido Property Management', url: 'https://lidopm.appfolio.com/listings/listings' },
 ] as const;
 export type DirectRegion = 'all' | 'la' | 'oc';
 export type DirectSource = typeof DIRECT_SOURCES[number];
@@ -21,6 +24,8 @@ export const SOURCE_TTL_MS = 6 * 60 * 60 * 1000;
 export const STALE_LIMIT_MS = 24 * 60 * 60 * 1000;
 const OC_CITIES = new Set(['aliso viejo','anaheim','brea','buena park','costa mesa','cypress','dana point','fountain valley','fullerton','garden grove','huntington beach','irvine','la habra','la palma','laguna beach','laguna hills','laguna niguel','laguna woods','lake forest','los alamitos','mission viejo','newport beach','orange','placentia','rancho santa margarita','san clemente','san juan capistrano','santa ana','seal beach','stanton','sunset beach','tustin','villa park','westminster','yorba linda']);
 const LA_CITIES = new Set(['los angeles','west hollywood','hollywood','santa monica','culver city','beverly hills','inglewood','pasadena','south pasadena','glendale','burbank','alhambra','monterey park','long beach','torrance','redondo beach','hermosa beach','manhattan beach','el segundo','hawthorne','gardena','compton','downey','whittier','bellflower','lakewood','san pedro','venice','marina del rey','northridge','van nuys','sherman oaks','studio city','north hollywood','encino','tarzana','reseda','canoga park','woodland hills','granada hills','sylmar','sunland','tujunga','panorama city','valley village','valley glen','santa clarita','castaic','valencia','newhall','san fernando','san gabriel','monrovia','arcadia','el monte','azusa','west covina','pomona','claremont','la verne','san dimas','duarte','altadena']);
+// OC includes a few 906/907 ZIPs; use explicit city/ZIP pairs rather than broad prefixes.
+const OC_ZIP_EXCEPTIONS: Record<string, readonly string[]> = { 'buena park':['90620','90621'], 'la habra':['90631'], 'la palma':['90623'], 'los alamitos':['90720'], 'seal beach':['90740'], 'sunset beach':['90742'] };
 const titleCase = (s: string) => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 function plain(value: string) {
   const named: Record<string,string> = { amp:'&', quot:'"', apos:"'", lt:'<', gt:'>', nbsp:' ' };
@@ -34,7 +39,7 @@ function field(block: string, className: string) {
   return plain(block.match(new RegExp(`<([a-z0-9]+)\\b[^>]*class="[^"]*\\b${className}\\b[^"]*"[^>]*>([\\s\\S]*?)<\\/\\1>`, 'i'))?.[2] ?? '');
 }
 function countyFor(city: string, zip: string): 'la' | 'oc' | undefined {
-  if (OC_CITIES.has(city.toLowerCase()) && /^(926|927|928)/.test(zip)) return 'oc';
+  if (OC_CITIES.has(city.toLowerCase()) && (/^(926|927|928)/.test(zip) || OC_ZIP_EXCEPTIONS[city.toLowerCase()]?.includes(zip))) return 'oc';
   if (LA_CITIES.has(city.toLowerCase()) && /^(900|901|902|903|904|905|906|907|908|910|911|912|913|914|915|916|917|918)/.test(zip)) return 'la';
 }
 /** Parse the manager's public AppFolio index. Never execute scripts or follow application links. */

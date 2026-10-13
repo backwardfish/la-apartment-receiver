@@ -36,7 +36,7 @@ export default function DirectSourceControls({onResults}: Props) {
   useEffect(()=>{void load('Loft under $3,500','all');return()=>controller.current?.abort();},[load]);
   const submit=(e: FormEvent)=>{e.preventDefault();void load(query.trim(),region);};
   return <section className="direct-pilot" aria-label="Direct source discovery">
-    <div className="direct-heading"><span className="source-chip">Direct sources · pilot</span><p>Two local managers. Unit-level listings from their own rental pages. Loft character is a preference; budget and required features stay strict.</p></div>
+    <div className="direct-heading"><span className="source-chip">Direct sources · pilot</span><p>Local property managers. Unit-level listings from their own rental pages. Loft character is a preference; budget and required features stay strict.</p></div>
     <form className="intent-search direct-search" onSubmit={submit}>
       <label className="direct-region">Area<select aria-label="Direct source area" value={region} onChange={e=>setRegion(e.target.value as DirectRegion)} disabled={state==='loading'}><option value="all">LA + Orange County</option><option value="la">LA County</option><option value="oc">Orange County</option></select></label>
       <textarea aria-label="Describe your direct source search" value={query} onChange={e=>setQuery(e.target.value)} rows={2} maxLength={500} required placeholder="Loft in Hollywood under $3,500 with parking"/>
@@ -45,6 +45,6 @@ export default function DirectSourceControls({onResults}: Props) {
     <div className="intent-suggestions"><span>Try</span>{['Loft under $3,500','One bedroom in Irvine under $3,000','Loft in Hollywood with parking'].map(q=><button key={q} disabled={state==='loading'} onClick={()=>{setQuery(q);setRegion('all');void load(q,'all');}}>{q}</button>)}</div>
     <div role="status" className="direct-status">{state==='loading'?'Checking the managers’ public rental pages…':state==='error'?message:`${matches} matches from ${inventoryCount} source-backed units. Source checks are reused for up to 6 hours.`}</div>
     <div className="direct-source-list">{sources.map(s=><div key={s.url}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.name} ↗</a><span>{s.status==='unavailable'?'Unavailable':`${s.count} units · ${s.status==='stale'?'Refresh failed; older evidence':s.status==='cached'?'Saved source check':'Checked source'}`}</span>{s.checkedAt&&<time dateTime={s.checkedAt}>Last checked {new Date(s.checkedAt).toLocaleString()}</time>}</div>)}</div>
-    <p className="direct-note">This is a two-source pilot, not a complete county search. Confirm rent, fees, and availability with the manager. Abbreviated descriptions can leave features unknown.</p>
+    <p className="direct-note">These manager feeds are not a complete county search. Confirm rent, fees, and availability with the manager. Abbreviated descriptions can leave features unknown.</p>
   </section>;
 }
