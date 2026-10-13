@@ -5,7 +5,7 @@ import type { DirectFeed, DirectRegion, SourceReport } from './direct-sources';
 import type { LiveListing } from './live-search';
 import { sanitizePersistedListings } from './workspace-state';
 
-type Props = { onResults: (listings: LiveListing[], query: string) => void };
+type Props = { onResults: (listings: LiveListing[], query: string, region: DirectRegion) => void };
 export default function DirectSourceControls({onResults}: Props) {
   const [query,setQuery]=useState('Loft under $3,500');
   const [region,setRegion]=useState<DirectRegion>('all');
@@ -18,7 +18,7 @@ export default function DirectSourceControls({onResults}: Props) {
   useEffect(()=>{callback.current=onResults;},[onResults]);
   const load=useCallback(async (q: string, r: DirectRegion) => {
     controller.current?.abort(); const abort=new AbortController();controller.current=abort;
-    setState('loading');setMessage('');setSources([]);callback.current([],q);
+    setState('loading');setMessage('');setSources([]);callback.current([],q,r);
     try {
       const response=await fetch('/api/direct-sources',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query:q,region:r}),signal:abort.signal});
       const body=await response.json() as {status?:string;message?:string;sources?:SourceReport[];results?:LiveListing[];inventoryCount?:number};
@@ -30,7 +30,7 @@ export default function DirectSourceControls({onResults}: Props) {
       const safe=sanitizePersistedListings(feed.results.map(l=>({...l,available:l.available??'Check original',status:'needs-verification',fit:0,why:[],unknowns:[],redFlags:[]})))??[];
       const ids=new Set(safe.map(l=>l.id));
       const results=feed.results.filter(l=>ids.has(l.id));
-      callback.current(results,q);setInventoryCount(feed.inventoryCount);setMatches(results.length);setState('done');
+      callback.current(results,q,r);setInventoryCount(feed.inventoryCount);setMatches(results.length);setState('done');
     } catch(error) {if(!abort.signal.aborted){setState('error');setMessage(error instanceof Error?error.message:'Direct sources are unavailable.');}}
   },[]);
   useEffect(()=>{void load('Loft under $3,500','all');return()=>controller.current?.abort();},[load]);

@@ -11,7 +11,7 @@ export function recommendationCache(context: Context): RecommendationCache {
   return { get: async () => store.get('latest', { type: 'json' }), put: async value => { await store.setJSON('latest', value); } };
 }
 export const createRecommendationsHandler = (getCache: (context: Context) => RecommendationCache = recommendationCache, fetcher: typeof fetch = fetch, clock: () => Date = () => new Date()) => async (request: Request, context: Context) => {
-  const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'x-receiver-release': release.revision, ...(status === 405 ? { allow: 'GET, POST' } : {}) } });
+  const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'x-receiver-release': release.revision, 'x-request-id': context?.requestId || crypto.randomUUID(), ...(status === 405 ? { allow: 'GET, POST' } : {}) } });
   if (!['GET', 'POST'].includes(request.method)) return reply({ status: 'unavailable', message: 'Use GET or POST.' }, 405);
   let payload: unknown = { query: 'Loft under $3,500', region: 'all' };
   if (request.method === 'POST') {
