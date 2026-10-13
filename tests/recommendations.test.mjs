@@ -31,7 +31,7 @@ test('normal queue reads reuse the hosted inventory, filter brief, and retain re
  const result=await handler(new Request('https://test/api/recommendations',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query:'one bedroom under $3,000',region:'la'})}),context);
  assert.equal(result.status,200);const body=await result.json();assert.equal(calls,0);
  assert.ok(body.results.length > 0);assert.ok(body.results.every(row=>row.rent<=3000&&row.beds>=1&&row.county==='la'));
- assert.equal(body.nextRefreshAt,'2026-10-13T10:00:00.000Z');assert.ok(result.headers.get('x-receiver-release'));
+ assert.equal(body.nextRefreshAt,'2026-10-13T10:00:00.000Z');assert.ok(result.headers.get('x-receiver-release'));assert.equal(result.headers.get('x-request-id'),'test');
 });
 test('invalid recommendation requests fail before cache or outbound work; empty sources return unavailable',async()=>{
  let reads=0;const handler=createRecommendationsHandler(()=>{reads++;return cache();},async()=>{throw new Error('offline');},()=>now);
