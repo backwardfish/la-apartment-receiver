@@ -42,7 +42,7 @@ export const createDirectSourcesHandler = (getCache: ()=>InventoryCache=cache, f
     }
   }));
   const sources=parts.map(p=>p.report);
-  if(parts.every(p=>p.inventory===null))return reply({status:'unavailable',message:'Both direct sources are unavailable. Try again later or use Zillow search.',sources},502);
+  if(parts.every(p=>p.inventory===null))return reply({status:'unavailable',message:'All direct sources are unavailable. Try again later or use Zillow search.',sources},502);
   const inventory=parts.flatMap(p=>p.inventory?.listings??[]);
   return reply({status:'ok',query,searchedAt:now.toISOString(),results:filterDirectListings(inventory,query,region,now),sources,inventoryCount:inventory.length});
 };

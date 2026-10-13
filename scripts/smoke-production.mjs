@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { DIRECT_SOURCES } from '../app/direct-sources.ts';
 import origins from '../app/trusted-origins.json' with { type: 'json' };
 
 const [site = 'https://la-apartment-receiver.netlify.app', revision, ...flags] = process.argv.slice(2);
@@ -51,14 +52,22 @@ assert.equal(directResponse.status, 200, 'Direct-source pilot must return live o
 assert.equal(directResponse.headers.get('x-receiver-release'), revision);
 const direct = await directResponse.json();
 assert.equal(direct.status, 'ok');
-assert.equal(direct.sources.length, 2);
-assert.ok(direct.sources.every(source => ['checked','cached'].includes(source.status) && source.count > 0 && Number.isFinite(Date.parse(source.checkedAt))), 'Both local managers must be readable');
+assert.equal(direct.sources.length, DIRECT_SOURCES.length);
+assert.ok(direct.sources.every(source => ['checked','cached'].includes(source.status) && source.count > 0 && Number.isFinite(Date.parse(source.checkedAt))), 'Configured local managers must be readable');
 assert.ok(direct.results.length > 0, 'Pilot should contain testable units');
-assert.ok(direct.results.every(listing => listing.id.startsWith('direct:') && listing.rent <= 3500 && /^https:\/\/(lapmg|orangecountypm)\.appfolio\.com\/listings\/detail\//.test(listing.sourceUrl) && /^https:\/\/images\.cdn\.appfolio\.com\//.test(listing.image)));
+assert.ok(direct.results.every(listing => listing.id.startsWith('direct:') && listing.rent <= 3500 && DIRECT_SOURCES.some(source=>new URL(source.url).origin===new URL(listing.sourceUrl).origin) && new URL(listing.sourceUrl).pathname.startsWith('/listings/detail/') && /^https:\/\/images\.cdn\.appfolio\.com\//.test(listing.image)));
 const ocResponse = await request('/api/direct-sources', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query:'one bedroom under $3,000',region:'oc'})});
 assert.equal(ocResponse.status, 200);
 const oc = await ocResponse.json();
 assert.ok(oc.results.length > 0 && oc.results.every(listing => listing.county === 'oc' && listing.rent <= 3000 && listing.beds >= 1), 'OC scope, budget, and bedroom requirements must hold');
+const recommendationResponse=await request('/api/recommendations');
+assert.equal(recommendationResponse.status,200);
+assert.equal(recommendationResponse.headers.get('x-receiver-release'),revision);
+const recommendations=await recommendationResponse.json();
+assert.equal(recommendations.status,'ok');
+assert.ok(recommendations.results.length>0&&recommendations.results.every(listing=>listing.rent<=3500));
+assert.equal(recommendations.sources.length,DIRECT_SOURCES.length);
+assert.ok(Number.isFinite(Date.parse(recommendations.refreshedAt))&&Number.isFinite(Date.parse(recommendations.nextRefreshAt)));
 const hashes = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
   .filter(([, attributes, body]) => !/\bsrc=/.test(attributes) && body.trim())
   .map(([, , body]) => `'sha256-${createHash('sha256').update(body).digest('base64')}'`);
@@ -67,6 +76,8 @@ assert.deepEqual(new Set(scripts.match(/'sha256-[^']+'/g)), new Set(hashes), 'Se
 
 // Every default search request is invalid before credential access or reservation.
 const checks = [
+  { name:'recommended wrong method',path:'/api/recommendations',init:{method:'DELETE'},expected:405 },
+  { name:'recommended invalid scope',path:'/api/recommendations',init:{method:'POST',headers:{'content-type':'application/json'},body:'{"query":"loft","region":"unknown"}'},expected:400 },
   { name:'direct invalid scope', path:'/api/direct-sources',init:{method:'POST',headers:{'content-type':'application/json'},body:'{"query":"loft","region":"unknown"}'},expected:400 },
   { name:'direct wrong method', path:'/api/direct-sources',init:{method:'DELETE'},expected:405 },
   { name:'invalid query', path:'/api/search', init:{ method:'POST', headers:{'content-type':'application/json'}, body:'{"query":""}' }, expected:400 },

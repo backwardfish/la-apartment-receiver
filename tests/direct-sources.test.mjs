@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import { DIRECT_SOURCES,parseAppfolioInventory,filterDirectListings,fetchInventory,SOURCE_TTL_MS,STALE_LIMIT_MS,directIntent } from '../app/direct-sources.ts';
 import { createDirectSourcesHandler } from '../netlify/functions/direct-sources.mts';
 const now=new Date('2026-10-09T01:00:00Z');
@@ -36,8 +37,8 @@ test('bounded fetch uses fixed URLs and rejects oversized or non-HTML responses'
 });
 test('feed caches inventory across different briefs without refreshing its checked timestamp',async()=>{
   const store=memory();let calls=0;const handler=createDirectSourcesHandler(()=>store,async url=>{calls++;return fetcher(url)},()=>now);
-  const first=await handler(request(),{});assert.equal(first.status,200);const body=await first.json();assert.equal(body.sources.length,2);assert.equal(calls,2);
-  const second=await (await handler(request('under $2,000'),{})).json();assert.equal(calls,2);assert.equal(second.results.length,0);assert.ok(second.sources.every(s=>s.status==='cached'&&s.checkedAt===now.toISOString()));
+  const first=await handler(request(),{});assert.equal(first.status,200);const body=await first.json();assert.equal(body.sources.length,DIRECT_SOURCES.length);assert.equal(calls,DIRECT_SOURCES.length);
+  const second=await (await handler(request('under $2,000'),{})).json();assert.equal(calls,DIRECT_SOURCES.length);assert.equal(second.results.length,0);assert.ok(second.sources.every(s=>s.status==='cached'&&s.checkedAt===now.toISOString()));
   assert.equal(first.headers.get('cache-control'),'no-store');assert.ok(first.headers.get('x-receiver-release'));
 });
 test('partial failure is explicit, stale evidence expires, and failed checks never advance timestamps',async()=>{
@@ -45,7 +46,7 @@ test('partial failure is explicit, stale evidence expires, and failed checks nev
   const handler=createDirectSourcesHandler(()=>store,async()=>{throw Error('offline')},()=>now);
   const stale=await (await handler(request(),{})).json();assert.equal(stale.sources[0].status,'unavailable');assert.equal(stale.sources[1].status,'stale');assert.equal(stale.sources[1].checkedAt,old.checkedAt);assert.equal(stale.results[0].freshness,'stale');
   const expired=createDirectSourcesHandler(()=>store,async()=>{throw Error('offline')},()=>new Date(now.getTime()+STALE_LIMIT_MS));assert.equal((await expired(request(),{})).status,502);
-  const partial=createDirectSourcesHandler(()=>memory(),async url=>{if(url.includes('lapmg.'))throw Error('offline');return fetcher(url)},()=>now);
+  const partial=createDirectSourcesHandler(()=>memory(),async url=>{if(!url.includes('orangecountypm.'))throw Error('offline');return fetcher(url)},()=>now);
   const body=await(await partial(request(),{})).json();assert.equal(body.results.length,1);assert.equal(body.sources[0].status,'unavailable');assert.equal(body.sources[1].status,'checked');
 });
 test('invalid requests fail before cache, outbound requests, or provider allowance access',async()=>{
@@ -54,4 +55,50 @@ test('invalid requests fail before cache, outbound requests, or provider allowan
   assert.equal((await handler(request('loft','http://evil.test'),{})).status,400);
   assert.equal((await handler(new Request('https://receiver.test',{method:'DELETE'}),{})).status,405);
   assert.equal((await handler(new Request('https://receiver.test',{method:'POST',body:'wrong'}),{})).status,415);
+});
+
+const sourceFixture = source => readFileSync(new URL(`./fixtures/direct-${source.id}.html`,import.meta.url),'utf8');
+test('additional managers preserve captured unit prices, exact links, images, and county scope',()=>{
+  const expected = {
+    mcmpropertymanagement:{count:2,rent:1575,beds:0,county:'la',unit:'8b518bad-51a6-4b3c-82d7-d00f94228062'},
+    dtlamanagement:{count:2,rent:2000,beds:1,county:'la',unit:'85854e46-2d3a-4250-a440-0576ee601b68'},
+    lidopm:{count:2,rent:2125,beds:1,county:'oc',unit:'02a87d05-9be0-4552-a5a1-58c7d5855155'},
+  };
+  for(const source of DIRECT_SOURCES.slice(2)){
+    const result=parseAppfolioInventory(sourceFixture(source),source,now), e=expected[source.id];
+    assert.equal(result.listings.length,e.count,source.id);
+    const first=result.listings[0];assert.equal(first.rent,e.rent);assert.equal(first.beds,e.beds);assert.equal(first.county,e.county);
+    assert.equal(first.sourceUrl,new URL(`/listings/detail/${e.unit}`,source.url).href);
+    assert.ok(first.image.startsWith(`https://images.cdn.appfolio.com/${source.id}/images/`));
+    assert.equal(first.capturedAt,now.toISOString());assert.equal(first.source,source.name);
+    assert.equal(filterDirectListings(result.listings,'under $3,000',e.county==='la'?'oc':'la',now).length,0);
+  }
+  // The DTLA capture includes one unpriced ad and one commercial space lacking bedroom/bathroom specs.
+  const dtla=DIRECT_SOURCES.find(source=>source.id==='dtlamanagement');
+  assert.equal((sourceFixture(dtla).match(/id="listing_/g)??[]).length,4);
+});
+test('OC city-specific 906/907 ZIPs remain in OC without admitting unrelated city/ZIP pairs',()=>{
+  const valid=[['Buena Park','90620'],['Buena Park','90621'],['La Habra','90631'],['La Palma','90623'],['Los Alamitos','90720'],['Seal Beach','90740'],['Sunset Beach','90742']];
+  for(const [city,zip] of valid){
+    const parsed=parseAppfolioInventory(fixture(`1 Main St, ${city}, CA ${zip}`),DIRECT_SOURCES[1],now);
+    assert.equal(parsed.listings[0].county,'oc');
+    assert.equal(filterDirectListings(parsed.listings,'under $3,000','oc',now).length,1);
+  }
+  for(const address of ['1 Main St, Irvine, CA 90620','1 Main St, Buena Park, CA 90740','1 Main St, Phoenix, CA 90620'])assert.throws(()=>parseAppfolioInventory(fixture(address),DIRECT_SOURCES[1],now));
+});
+test('expanded sources fetch independently in parallel, cache by manager, and isolate one manager failure',async()=>{
+  const store=memory();let active=0,maxActive=0;const urls=[];
+  const handler=createDirectSourcesHandler(()=>store,async url=>{
+    active++;maxActive=Math.max(maxActive,active);urls.push(url);
+    await new Promise(resolve=>setTimeout(resolve,5));active--;
+    const source=DIRECT_SOURCES.find(source=>source.url===url);
+    if(source.id==='mcmpropertymanagement')throw Error('offline');
+    return new Response(source.id==='lapmg'||source.id==='orangecountypm'?fixture():sourceFixture(source),{headers:{'content-type':'text/html'}});
+  },()=>now);
+  const response=await handler(request(),{});assert.equal(response.status,200);const body=await response.json();
+  assert.equal(maxActive,DIRECT_SOURCES.length);assert.deepEqual(new Set(urls),new Set(DIRECT_SOURCES.map(source=>source.url)));
+  assert.equal(body.sources.find(source=>source.name==='MCM Property Management').status,'unavailable');
+  assert.ok(body.sources.filter(source=>source.name!=='MCM Property Management').every(source=>source.status==='checked'));
+  assert.equal(store.values.size,DIRECT_SOURCES.length-1);
+  assert.ok(body.results.some(listing=>listing.source==='DTLA Management'));assert.ok(body.results.some(listing=>listing.source==='Lido Property Management'));
 });

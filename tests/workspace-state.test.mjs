@@ -107,3 +107,16 @@ test('multi-area workspaces round-trip and v4 single-area searches migrate witho
     assert.deepEqual(restoreWorkspace([]).saved, [listing.id]);
   } finally { delete globalThis.localStorage; }
 });
+
+test('recommendation queue, pipeline progress and document readiness round-trip without storing documents',()=>{
+ const data=new Map();globalThis.localStorage={getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)};
+ try {
+  assert.ok(persistWorkspace({saved:[listing.id],compare:[],rejected:[],activeQuery:'',liveListings:null,recommendationQueue:[listing],recommendationBrief:'one bedroom',pipeline:{[listing.id]:'Touring',missing:'Signed'},documentsReady:['id','income','secret-bank-data','id']}));
+  const restored=restoreWorkspace([]);
+  assert.equal(restored.recommendationQueue[0].sourceUrl,listing.sourceUrl);
+  assert.deepEqual(restored.pipeline,{[listing.id]:'Touring'});
+  assert.deepEqual(restored.documentsReady,['id','income']);
+  assert.equal(JSON.parse(data.get(STORAGE_KEY)).version,7);
+  assert.ok(!data.get(STORAGE_KEY).includes('secret-bank-data'));
+ }finally{clearWorkspace();delete globalThis.localStorage;}
+});

@@ -1,3 +1,4 @@
+import { PIPELINE_STAGES, DOCUMENT_ITEMS, type PipelineStage } from "./application-state.ts";
 import { FEEDBACK_REASONS, type ListingFeedback } from "./listing-feedback.ts";
 import { trustedUrl } from './security-urls.ts';
 import { isNeighborhoodKey, isNeighborhoodSelection, normalizeNeighborhoodSelection, type NeighborhoodKey } from './neighborhoods.ts';
@@ -20,9 +21,11 @@ export type Workspace = {
   liveListings: PersistedListing[] | null;
   retainedListings?: PersistedListing[];
   feedback?: ListingFeedback[];
+  recommendationQueue?: PersistedListing[]; recommendationBrief?: string; lastRecommendationRefresh?: string;
+  pipeline?: Record<string, PipelineStage>; documentsReady?: string[];
 };
-export const STORAGE_KEY = 'receiver:workspace:v6';
-const LEGACY_KEYS = ['receiver:workspace:v5', 'receiver:workspace:v4', 'receiver:workspace:v3', 'receiver:workspace:v2'];
+export const STORAGE_KEY = 'receiver:workspace:v7';
+const LEGACY_KEYS = ['receiver:workspace:v6', 'receiver:workspace:v5', 'receiver:workspace:v4', 'receiver:workspace:v3', 'receiver:workspace:v2'];
 const MAX_BYTES = 500_000;
 const RETENTION_MS = 30 * 86_400_000;
 function text(value: unknown): value is string { return typeof value === 'string' && value.length <= 2048; }
@@ -92,7 +95,7 @@ export function restoreWorkspace(snapshots: PersistedListing[], now=Date.now()):
     if(!raw)return null;
     if(new TextEncoder().encode(raw).length>MAX_BYTES){clearWorkspace();return null;}
     const value=JSON.parse(raw);
-    if(!value||![2,3,4,5,6].includes(value.version))return null;
+    if(!value||![2,3,4,5,6,7].includes(value.version))return null;
     if(value.version>=3&&(!finite(value.savedAt)||value.savedAt>now+300000||now-value.savedAt>RETENTION_MS)){clearWorkspace();return null;}
     const activeNeighborhoods=value.version>=5
       ? (isNeighborhoodSelection(value.activeNeighborhoods)?normalizeNeighborhoodSelection(value.activeNeighborhoods):undefined)
@@ -102,23 +105,29 @@ export function restoreWorkspace(snapshots: PersistedListing[], now=Date.now()):
     const liveListings=activeNeighborhoods?restoredLiveListings:null;
     const retainedListings=sanitizePersistedListings(value.retainedListings)??[];
     for(const listing of [...(restoredLiveListings??[]),...retainedListings])if(listing.capturedAt&&now-Date.parse(listing.capturedAt)>7*86400000)listing.status='stale';
-    const allowed=new Set([...snapshots,...(restoredLiveListings??[]),...retainedListings].map(l=>l.id));
+    const recommendationQueue=sanitizePersistedListings(value.recommendationQueue)??[];
+    const allowed=new Set([...recommendationQueue,...snapshots,...(restoredLiveListings??[]),...retainedListings].map(l=>l.id));
     const saved=validWorkspaceIds(value.saved,allowed),compare=validWorkspaceIds(value.compare,allowed,3);
-    const retained=retainWorkspaceListings(retainedListings,[...snapshots,...(restoredLiveListings??[])],[...saved,...compare]);
+    const retained=retainWorkspaceListings(retainedListings,[...recommendationQueue,...snapshots,...(restoredLiveListings??[])],[...saved,...compare]);
     const feedback=sanitizeFeedback(value.feedback);
-    return {feedback,liveListings,retainedListings:retained,saved,rejected:activeNeighborhoods?validWorkspaceIds(value.rejected,allowed):[],compare,activeQuery:activeNeighborhoods&&typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):'',activeNeighborhood,activeNeighborhoods};
+    const pipeline=Object.fromEntries(Object.entries(value.pipeline??{}).filter(([id,stage])=>allowed.has(id)&&PIPELINE_STAGES.includes(stage as PipelineStage))) as Record<string,PipelineStage>;
+    const documentsReady=Array.isArray(value.documentsReady)?[...new Set(value.documentsReady.filter((id:unknown)=>DOCUMENT_ITEMS.some(item=>item.id===id)))] as string[]:[];
+    return {pipeline,documentsReady,recommendationQueue,recommendationBrief:typeof value.recommendationBrief==='string'?value.recommendationBrief.slice(0,500):undefined,lastRecommendationRefresh:timestamp(value.lastRecommendationRefresh),feedback,liveListings,retainedListings:retained,saved,rejected:activeNeighborhoods?validWorkspaceIds(value.rejected,allowed):[],compare,activeQuery:activeNeighborhoods&&typeof value.activeQuery==='string'?value.activeQuery.slice(0,500):'',activeNeighborhood,activeNeighborhoods};
   } catch { clearWorkspace();return null; }
 }
 export function persistWorkspace(workspace: Workspace, now=Date.now()): boolean {
   try {
     const liveListings=sanitizePersistedListings(workspace.liveListings);
     const saved=workspace.saved.slice(0,100),compare=workspace.compare.slice(0,3);
-    const retainedListings=retainWorkspaceListings(workspace.retainedListings??[],liveListings??[],[...saved,...compare]);
+    const retainedListings=retainWorkspaceListings(workspace.retainedListings??[],[...(liveListings??[]),...(workspace.recommendationQueue??[])],[...saved,...compare]);
     const activeNeighborhoods=workspace.activeNeighborhoods!==undefined
       ? (isNeighborhoodSelection(workspace.activeNeighborhoods)?normalizeNeighborhoodSelection(workspace.activeNeighborhoods):undefined)
       : (isNeighborhoodKey(workspace.activeNeighborhood)?[workspace.activeNeighborhood]:undefined);
     const feedback=sanitizeFeedback(workspace.feedback);
-    const clean={version:6,feedback,savedAt:now,saved,rejected:workspace.rejected.slice(0,100),compare,activeQuery:workspace.activeQuery.slice(0,500),activeNeighborhoods,liveListings,retainedListings};
+    const recommendationQueue=sanitizePersistedListings(workspace.recommendationQueue)??[];
+    const pipeline=Object.fromEntries(Object.entries(workspace.pipeline??{}).filter(([id,stage])=>saved.includes(id)&&PIPELINE_STAGES.includes(stage)));
+    const documentsReady=[...new Set((workspace.documentsReady??[]).filter(id=>DOCUMENT_ITEMS.some(item=>item.id===id)))];
+    const clean={version:7,pipeline,documentsReady,recommendationQueue,recommendationBrief:workspace.recommendationBrief?.slice(0,500),lastRecommendationRefresh:timestamp(workspace.lastRecommendationRefresh),feedback,savedAt:now,saved,rejected:workspace.rejected.slice(0,100),compare,activeQuery:workspace.activeQuery.slice(0,500),activeNeighborhoods,liveListings,retainedListings};
     const raw=JSON.stringify(clean);if(new TextEncoder().encode(raw).length>MAX_BYTES)return false;
     const s=storage();if(!s)return false;s.setItem(STORAGE_KEY,raw);for(const key of LEGACY_KEYS)s.removeItem(key);return true;
   } catch { return false; }
