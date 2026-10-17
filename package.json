@@ -30,7 +30,7 @@
     "@cloudflare/workers-types": "5.20260911.1",
     "@netlify/functions": "6.0.0",
     "@tailwindcss/postcss": "4.2.1",
-    "@types/node": "22.19.19",
+    "@types/node": "26.6.4",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@typescript-eslint/eslint-plugin": "8.59.3",
